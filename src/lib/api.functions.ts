@@ -1,0 +1,1302 @@
+import { createServerFn } from '@tanstack/react-start';
+import { prisma } from './db';
+import { getAuthenticatedUser, verifyPassword, hashPassword, setSession, destroySession } from './auth.server';
+import crypto from 'node:crypto';
+
+type AuthenticatedUser = {
+  id: string;
+  role: string;
+  password_changed: boolean;
+  must_setup: boolean;
+};
+
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+const DUMMY_PASSWORD_HASH = 'pbkdf2_sha512$310000$00000000000000000000000000000000$ae47c89509232aade637ffdfb5cd6455bae8d1cb5397d1378dd1dd1113c3e81760f52a2ae4c57c4e850da8b186461ecc46ec269759101aad6483086904322d72';
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 8;
+const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
+const MAX_BACKUP_MEMBERS = 10000;
+const MAX_BACKUP_ATTENDANCES = 250000;
+
+const loginAttempts = new Map<string, {
+  failedCount: number;
+  windowStartedAt: number;
+  lockedUntil: number;
+}>();
+
+function assertRecord(data: unknown): asserts data is Record<string, unknown> {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Input non valido');
+  }
+}
+
+function requiredString(data: Record<string, unknown>, key: string, maxLength = 255): string {
+  const value = data[key];
+  if (typeof value !== 'string') {
+    throw new Error('Input non valido');
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > maxLength) {
+    throw new Error('Input non valido');
+  }
+
+  return trimmed;
+}
+
+function optionalDateString(data: Record<string, unknown>, key: string): string | undefined {
+  const value = data[key];
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error('Data non valida');
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('Data non valida');
+  }
+
+  return value;
+}
+
+function requiredDateString(data: Record<string, unknown>, key: string): string {
+  const value = optionalDateString(data, key);
+  if (!value) {
+    throw new Error('Data non valida');
+  }
+
+  return value;
+}
+
+function nullableString(data: Record<string, unknown>, key: string, maxLength = 255): string | null {
+  const value = data[key];
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new Error('Input non valido');
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > maxLength) {
+    throw new Error('Input non valido');
+  }
+
+  return trimmed;
+}
+
+function assertStrongPassword(password: string, message: string) {
+  if (!PASSWORD_REGEX.test(password)) {
+    throw new Error(message);
+  }
+}
+
+function assertAllowedRole(role: string): asserts role is 'admin' | 'user' {
+  if (role !== 'admin' && role !== 'user') {
+    throw new Error('Backup non valido: ruolo non riconosciuto');
+  }
+}
+
+function assertUniqueValues(values: string[], label: string) {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) {
+      throw new Error(`Backup non valido: valore duplicato in ${label}`);
+    }
+    seen.add(value);
+  }
+}
+
+function assertPasswordHash(value: string) {
+  const modern = value.match(/^pbkdf2_sha512\$(\d+)\$([a-f0-9]{32,128})\$([a-f0-9]{128})$/i);
+  if (modern) {
+    const iterations = Number(modern[1]);
+    if (Number.isInteger(iterations) && iterations >= 100000 && iterations <= 1000000) {
+      return;
+    }
+  }
+
+  const legacy = value.match(/^[a-f0-9]{16,128}:[a-f0-9]{128}$/i);
+  if (legacy) return;
+
+  throw new Error('Backup non valido: hash password non riconosciuto');
+}
+
+function assertLoginAllowed(username: string) {
+  const key = username.toLowerCase();
+  const attempt = loginAttempts.get(key);
+  const now = Date.now();
+
+  if (!attempt) return;
+
+  if (attempt.lockedUntil > now) {
+    const minutes = Math.ceil((attempt.lockedUntil - now) / 60000);
+    throw new Error(`Troppi tentativi non riusciti. Riprova tra ${minutes} min.`);
+  }
+
+  if (now - attempt.windowStartedAt > LOGIN_WINDOW_MS) {
+    loginAttempts.delete(key);
+  }
+}
+
+function recordLoginFailure(username: string) {
+  const key = username.toLowerCase();
+  const now = Date.now();
+  const current = loginAttempts.get(key);
+  const next = !current || now - current.windowStartedAt > LOGIN_WINDOW_MS
+    ? { failedCount: 1, windowStartedAt: now, lockedUntil: 0 }
+    : { ...current, failedCount: current.failedCount + 1 };
+
+  if (next.failedCount >= LOGIN_MAX_FAILURES) {
+    next.lockedUntil = now + LOGIN_LOCK_MS;
+  }
+
+  loginAttempts.set(key, next);
+}
+
+function clearLoginFailures(username: string) {
+  loginAttempts.delete(username.toLowerCase());
+}
+
+function generateTemporaryPassword(length = 12): string {
+  const requiredChars = ['A', 'a', '1', '!'];
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+  const passwordChars = [...requiredChars];
+
+  while (passwordChars.length < length) {
+    passwordChars.push(chars[crypto.randomInt(chars.length)]);
+  }
+
+  for (let i = passwordChars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [passwordChars[i], passwordChars[j]] = [passwordChars[j], passwordChars[i]];
+  }
+
+  return passwordChars.join('');
+}
+
+function generateQrToken(): string {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function getLocalDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateKey(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error('Data non valida');
+  }
+  return getLocalDateKey(date);
+}
+
+function getMemberSnapshot(attendance: {
+  member_id: string | null;
+  member_first_name: string;
+  member_last_name: string;
+  member_number: string;
+  member_was_deleted: boolean;
+  member?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    member_number: string | null;
+  } | null;
+}) {
+  return {
+    id: attendance.member?.id ?? attendance.member_id ?? '',
+    first_name: attendance.member?.first_name ?? attendance.member_first_name,
+    last_name: attendance.member?.last_name ?? attendance.member_last_name,
+    member_number: attendance.member?.member_number ?? attendance.member_number,
+    deleted: attendance.member_was_deleted || !attendance.member,
+  };
+}
+
+function isUniqueConstraintError(error: unknown): error is { code: 'P2002'; meta?: { target?: unknown } } {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
+}
+
+function uniqueTargetIncludes(error: { meta?: { target?: unknown } }, field: string): boolean {
+  const target = error.meta?.target;
+  return Array.isArray(target) ? target.includes(field) : String(target ?? '').includes(field);
+}
+
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  let text = value instanceof Date ? value.toISOString() : String(value);
+  if (/^[\s]*[=+\-@\t\r]/.test(text)) {
+    text = `'${text}`;
+  }
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function toCsv(headers: string[], rows: unknown[][]): string {
+  return [
+    headers.map(csvEscape).join(','),
+    ...rows.map((row) => row.map(csvEscape).join(',')),
+  ].join('\n');
+}
+
+function assertReadyAdmin(user: AuthenticatedUser | null): asserts user is AuthenticatedUser {
+  if (!user || user.role !== 'admin') {
+    throw new Error('Accesso non autorizzato');
+  }
+
+  if (user.must_setup || !user.password_changed) {
+    throw new Error("Completa prima la configurazione dell'account amministratore");
+  }
+}
+
+// Password complexity Zod schema (min 8 chars, 1 uppercase, 1 number, 1 symbol)
+export const setupValidator = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      username: requiredString(data, 'username', 80),
+      password: requiredString(data, 'password', 256),
+    };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      throw new Error('Non sei autenticato');
+    }
+
+    assertStrongPassword(data.password, 'La password deve contenere almeno 8 caratteri, una maiuscola, un numero e un simbolo.');
+
+    const trimmedUsername = data.username.trim().toLowerCase();
+    if (trimmedUsername.length < 3) {
+      throw new Error('Lo username deve contenere almeno 3 caratteri.');
+    }
+
+    // Check if username is already taken by someone else
+    const usernameExists = await prisma.member.findFirst({
+      where: {
+        username: trimmedUsername,
+        id: { not: user.id },
+      },
+    });
+
+    if (usernameExists) {
+      throw new Error('Questo username è già in uso.');
+    }
+
+    const hashed = hashPassword(data.password);
+
+    try {
+      await prisma.member.update({
+        where: { id: user.id },
+        data: {
+          username: trimmedUsername,
+          password: hashed,
+          password_changed: true,
+          must_setup: false,
+        },
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error) && uniqueTargetIncludes(error, 'username')) {
+        throw new Error('Questo username è già in uso.');
+      }
+      throw error;
+    }
+
+    await prisma.session.updateMany({
+      where: {
+        memberId: user.id,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+
+    await setSession(user.id);
+
+    return { success: true };
+  });
+
+// Admin-only: change the current administrator password after verifying the old one
+export const changeAdminPasswordFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      current_password: requiredString(data, 'current_password', 256),
+      new_password: requiredString(data, 'new_password', 256),
+    };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    const admin = await prisma.member.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        password: true,
+        role: true,
+      },
+    });
+
+    if (!admin || admin.role?.role !== 'admin') {
+      throw new Error('Accesso non autorizzato');
+    }
+
+    if (!verifyPassword(data.current_password, admin.password)) {
+      throw new Error('La password attuale non è corretta');
+    }
+
+    assertStrongPassword(data.new_password, 'La nuova password deve contenere almeno 8 caratteri, una maiuscola, un numero e un simbolo.');
+
+    if (verifyPassword(data.new_password, admin.password)) {
+      throw new Error('La nuova password deve essere diversa da quella attuale');
+    }
+
+    await prisma.member.update({
+      where: { id: admin.id },
+      data: {
+        password: hashPassword(data.new_password),
+        password_changed: true,
+        must_setup: false,
+      },
+    });
+
+    await prisma.session.updateMany({
+      where: {
+        memberId: admin.id,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+
+    await setSession(admin.id);
+
+    return { success: true };
+  });
+
+export const loginFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      username: requiredString(data, 'username', 80),
+      password: requiredString(data, 'password', 256),
+    };
+  })
+  .handler(async ({ data }) => {
+    const searchUsername = data.username.trim().toLowerCase();
+    assertLoginAllowed(searchUsername);
+
+    const member = await prisma.member.findUnique({
+      where: { username: searchUsername },
+      select: {
+        id: true,
+        password: true,
+        password_changed: true,
+        must_setup: true,
+      },
+    });
+
+    const passwordHash = member?.password ?? DUMMY_PASSWORD_HASH;
+    const isValid = verifyPassword(data.password, passwordHash);
+
+    if (!member || !isValid) {
+      recordLoginFailure(searchUsername);
+      throw new Error('Credenziali non valide');
+    }
+
+    clearLoginFailures(searchUsername);
+
+    // Setup session cookie
+    await setSession(member.id);
+
+    return {
+      success: true,
+      mustSetup: member.must_setup || !member.password_changed,
+    };
+  });
+
+export const logoutFn = createServerFn({ method: 'POST' })
+  .handler(async () => {
+    await destroySession();
+    return { success: true };
+  });
+
+export const getCurrentUserFn = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    return await getAuthenticatedUser();
+  });
+
+// Admin-guarded: Get all members
+export const getAllMembersFn = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    const members = await prisma.member.findMany({
+      where: { role: { is: { role: 'user' } } },
+      include: { role: true },
+      orderBy: { last_name: 'asc' },
+    });
+
+    return members.map((m) => ({
+      id: m.id,
+      first_name: m.first_name,
+      last_name: m.last_name,
+      member_number: m.member_number ?? '',
+      qr_token: m.qr_token ?? '',
+      username: m.username,
+      joined_at: m.joined_at.toISOString(),
+      expiry_date: m.expiry_date?.toISOString() ?? '',
+      password_changed: m.password_changed,
+      must_setup: m.must_setup,
+      role: m.role?.role || 'user',
+    }));
+  });
+
+// Admin-guarded: lightweight member list for fast attendance registration
+export const getCheckInMembersFn = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    const members = await prisma.member.findMany({
+      where: { role: { is: { role: 'user' } } },
+      select: {
+        id: true,
+        first_name: true,
+        last_name: true,
+        member_number: true,
+        expiry_date: true,
+      },
+      orderBy: [
+        { last_name: 'asc' },
+        { first_name: 'asc' },
+      ],
+    });
+
+    return members.map((member) => ({
+      id: member.id,
+      first_name: member.first_name,
+      last_name: member.last_name,
+      member_number: member.member_number ?? '',
+      expiry_date: member.expiry_date?.toISOString() ?? '',
+    }));
+  });
+
+// Admin-guarded: Create user
+export const createMemberFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      first_name: requiredString(data, 'first_name', 80),
+      last_name: requiredString(data, 'last_name', 80),
+      member_number: requiredString(data, 'member_number', 80),
+      start_date: optionalDateString(data, 'start_date'),
+    };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    // Normalize input
+    const firstName = data.first_name.trim();
+    const lastName = data.last_name.trim();
+    const memberNumber = data.member_number.trim().toUpperCase();
+
+    if (!firstName || !lastName || !memberNumber) {
+      throw new Error('Tutti i campi sono obbligatori');
+    }
+
+    // Auto-generate username: nome_cognome
+    const baseUsername = `${firstName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${lastName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    let finalUsername = baseUsername;
+    let counter = 1;
+
+    // Check uniqueness of username
+    while (true) {
+      const existing = await prisma.member.findUnique({
+        where: { username: finalUsername },
+      });
+      if (!existing) break;
+      finalUsername = `${baseUsername}${counter}`;
+      counter++;
+    }
+
+    // Check uniqueness of member number
+    const numberExists = await prisma.member.findUnique({
+      where: { member_number: memberNumber },
+    });
+    if (numberExists) {
+      throw new Error('Questo numero tessera è già in uso');
+    }
+
+    const securePassword = generateTemporaryPassword();
+
+    const joinedAt = data.start_date ? new Date(data.start_date) : new Date();
+    const expiryDate = new Date(joinedAt.getTime() + 365 * 24 * 60 * 60 * 1000); // +365 days
+
+    let newMember;
+    try {
+      newMember = await prisma.member.create({
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+          member_number: memberNumber,
+          qr_token: generateQrToken(),
+          username: finalUsername,
+          password: hashPassword(securePassword),
+          joined_at: joinedAt,
+          expiry_date: expiryDate,
+          password_changed: false,
+          must_setup: true,
+          role: {
+            create: {
+              role: 'user',
+            },
+          },
+        },
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        if (uniqueTargetIncludes(error, 'member_number')) {
+          throw new Error('Questo numero tessera è già in uso');
+        }
+
+        if (uniqueTargetIncludes(error, 'username')) {
+          throw new Error('Username già in uso, riprova la registrazione.');
+        }
+
+        if (uniqueTargetIncludes(error, 'qr_token')) {
+          throw new Error('Errore generazione QR, riprova la registrazione.');
+        }
+      }
+      throw error;
+    }
+
+    return {
+      success: true,
+      id: newMember.id,
+      username: newMember.username,
+      password: securePassword,
+      first_name: newMember.first_name,
+      last_name: newMember.last_name,
+      member_number: newMember.member_number,
+      qr_token: newMember.qr_token,
+      joined_at: newMember.joined_at.toISOString(),
+      expiry_date: newMember.expiry_date?.toISOString() ?? '',
+    };
+  });
+
+// Admin-guarded: Renew membership (with optional custom start date)
+export const renewMembershipFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      member_id: requiredString(data, 'member_id', 120),
+      start_date: optionalDateString(data, 'start_date'),
+    };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    const member = await prisma.member.findUnique({
+      where: { id: data.member_id },
+      include: { role: true },
+    });
+
+    if (!member) {
+      throw new Error('Membro non trovato');
+    }
+
+    if (member.role?.role === 'admin') {
+      throw new Error("L'account amministratore non ha un abbonamento da rinnovare");
+    }
+
+    const startDate = data.start_date ? new Date(data.start_date) : new Date();
+    const newExpiry = new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000);
+
+    await prisma.member.update({
+      where: { id: data.member_id },
+      data: {
+        joined_at: startDate,
+        expiry_date: newExpiry,
+      },
+    });
+
+    return { success: true };
+  });
+
+// Admin-guarded: Delete member
+export const deleteMemberFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      member_id: requiredString(data, 'member_id', 120),
+    };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    if (user.id === data.member_id) {
+      throw new Error('Non puoi eliminare il tuo stesso account amministratore');
+    }
+
+    await prisma.$transaction([
+      prisma.attendance.updateMany({
+        where: { member_id: data.member_id },
+        data: { member_was_deleted: true },
+      }),
+      prisma.member.delete({
+        where: { id: data.member_id },
+      }),
+    ]);
+
+    return { success: true };
+  });
+
+// Admin-guarded: Register QR scan / Attendance check-in
+export const registerAttendanceFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      member_id: requiredString(data, 'member_id', 120),
+    };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    // Manual check-in passes the member id; QR scans pass the opaque qr_token.
+    // Use unique lookups instead of a broad OR query to keep check-in snappy.
+    const memberById = await prisma.member.findUnique({
+      where: { id: data.member_id },
+      include: { role: true },
+    });
+    const member = memberById ?? await prisma.member.findUnique({
+      where: { qr_token: data.member_id },
+      include: { role: true },
+    });
+
+    if (!member) {
+      throw new Error('Membro non registrato o codice QR non valido');
+    }
+
+    if (member.role?.role === 'admin') {
+      throw new Error("L'account amministratore non usa tessere o check-in");
+    }
+
+    if (!member.member_number || !member.expiry_date) {
+      throw new Error('Tessera membro incompleta: numero tessera o scadenza mancanti');
+    }
+
+    // Check if membership is active
+    const today = new Date();
+    if (member.expiry_date < today) {
+      throw new Error(`Tessera scaduta il ${member.expiry_date.toLocaleDateString('it-IT')}`);
+    }
+
+    // Prevent duplicate attendance for today.
+    const checkInDay = getLocalDateKey(today);
+    const duplicate = await prisma.attendance.findUnique({
+      where: {
+        member_id_check_in_day: {
+          member_id: member.id,
+          check_in_day: checkInDay,
+        },
+      },
+    });
+
+    if (duplicate) {
+      return {
+        success: true,
+        alreadyCheckedIn: true,
+        member: {
+          id: member.id,
+          first_name: member.first_name,
+          last_name: member.last_name,
+          member_number: member.member_number,
+        },
+      };
+    }
+
+    // Register attendance
+    try {
+      await prisma.attendance.create({
+        data: {
+          member_id: member.id,
+          check_in_time: today,
+          check_in_day: checkInDay,
+          member_first_name: member.first_name,
+          member_last_name: member.last_name,
+          member_number: member.member_number,
+        },
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error) && uniqueTargetIncludes(error, 'check_in_day')) {
+        return {
+          success: true,
+          alreadyCheckedIn: true,
+          member: {
+            id: member.id,
+            first_name: member.first_name,
+            last_name: member.last_name,
+            member_number: member.member_number,
+          },
+        };
+      }
+      throw error;
+    }
+
+    return {
+      success: true,
+      alreadyCheckedIn: false,
+      member: {
+        id: member.id,
+        first_name: member.first_name,
+        last_name: member.last_name,
+        member_number: member.member_number,
+      },
+    };
+  });
+
+// Admin-guarded: Get today's attendance logs
+export const getTodayAttendanceFn = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    const todayKey = getLocalDateKey();
+
+    const attendances = await prisma.attendance.findMany({
+      where: {
+        check_in_day: todayKey,
+      },
+      include: {
+        member: true,
+      },
+      orderBy: {
+        check_in_time: 'desc',
+      },
+    });
+
+    return attendances.map((a) => ({
+      id: a.id,
+      check_in_time: a.check_in_time.toISOString(),
+      member: getMemberSnapshot(a),
+    }));
+  });
+
+// Admin-guarded: Search persisted attendance logs by date range and member text
+export const getAttendanceLogsFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      date: optionalDateString(data, 'date'),
+      date_from: optionalDateString(data, 'date_from'),
+      date_to: optionalDateString(data, 'date_to'),
+      search: typeof data.search === 'string' ? data.search.trim().slice(0, 120) : '',
+    };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    const today = new Date();
+    const selectedDateKey = data.date ? parseDateKey(data.date) : undefined;
+    const fromKey = selectedDateKey ?? (data.date_from ? parseDateKey(data.date_from) : getLocalDateKey(today));
+    const toKey = selectedDateKey ?? (data.date_to ? parseDateKey(data.date_to) : fromKey);
+
+    if (fromKey > toKey) {
+      throw new Error('La data iniziale non può essere successiva alla data finale');
+    }
+
+    const attendances = await prisma.attendance.findMany({
+      where: {
+        check_in_day: {
+          gte: fromKey,
+          lte: toKey,
+        },
+      },
+      include: {
+        member: true,
+      },
+      orderBy: {
+        check_in_time: 'desc',
+      },
+      take: 1000,
+    });
+
+    const searchTerm = data.search.toLowerCase();
+    const filtered = searchTerm
+      ? attendances.filter((a) => {
+          const member = getMemberSnapshot(a);
+          const fullName = `${member.first_name} ${member.last_name}`.toLowerCase();
+          const memberNumber = member.member_number.toLowerCase();
+          return fullName.includes(searchTerm) || memberNumber.includes(searchTerm);
+        })
+      : attendances;
+
+    return filtered.map((a) => ({
+      id: a.id,
+      check_in_time: a.check_in_time.toISOString(),
+      check_in_day: a.check_in_day,
+      member: getMemberSnapshot(a),
+    }));
+  });
+
+// Admin-guarded: Monthly summary for current expiries and previous completed attendance month
+export const getMonthlySummaryFn = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonthEnd = currentMonthStart;
+    const currentMonthLabel = currentMonthStart.toLocaleDateString('it-IT', {
+      month: 'long',
+      year: 'numeric',
+    });
+    const previousMonthLabel = previousMonthStart.toLocaleDateString('it-IT', {
+      month: 'long',
+      year: 'numeric',
+    });
+    const currentMonthKey = `${currentMonthStart.getFullYear()}-${String(currentMonthStart.getMonth() + 1).padStart(2, '0')}`;
+    const previousMonthKey = `${previousMonthStart.getFullYear()}-${String(previousMonthStart.getMonth() + 1).padStart(2, '0')}`;
+
+    const expiringMembers = await prisma.member.findMany({
+      where: {
+        role: { is: { role: 'user' } },
+        expiry_date: {
+          gte: currentMonthStart,
+          lt: nextMonthStart,
+        },
+      },
+      orderBy: [
+        { expiry_date: 'asc' },
+        { last_name: 'asc' },
+      ],
+    });
+
+    const attendances = await prisma.attendance.findMany({
+      where: {
+        check_in_day: {
+          gte: getLocalDateKey(previousMonthStart),
+          lt: getLocalDateKey(previousMonthEnd),
+        },
+      },
+      include: {
+        member: true,
+      },
+      orderBy: [
+        { check_in_day: 'asc' },
+        { check_in_time: 'asc' },
+      ],
+      take: 5000,
+    });
+
+    const eventMap = new Map<string, {
+      date: string;
+      attendance_count: number;
+      members: Array<{
+        id: string;
+        first_name: string;
+        last_name: string;
+        member_number: string;
+        deleted: boolean;
+        check_in_time: string;
+      }>;
+    }>();
+
+    for (const attendance of attendances) {
+      const member = getMemberSnapshot(attendance);
+      const event = eventMap.get(attendance.check_in_day) ?? {
+        date: attendance.check_in_day,
+        attendance_count: 0,
+        members: [],
+      };
+
+      event.attendance_count += 1;
+      event.members.push({
+        ...member,
+        check_in_time: attendance.check_in_time.toISOString(),
+      });
+      eventMap.set(attendance.check_in_day, event);
+    }
+
+    return {
+      id: `summary-${currentMonthKey}`,
+      title: `Riepilogo ${currentMonthLabel}`,
+      generated_at: now.toISOString(),
+      expiry: {
+        month_key: currentMonthKey,
+        month_label: currentMonthLabel,
+        period_start: currentMonthStart.toISOString(),
+        period_end: nextMonthStart.toISOString(),
+        members: expiringMembers.map((member) => ({
+          id: member.id,
+          first_name: member.first_name,
+          last_name: member.last_name,
+          member_number: member.member_number ?? '',
+          joined_at: member.joined_at.toISOString(),
+          expiry_date: member.expiry_date?.toISOString() ?? '',
+        })),
+      },
+      attendance: {
+        month_key: previousMonthKey,
+        month_label: previousMonthLabel,
+        period_start: previousMonthStart.toISOString(),
+        period_end: previousMonthEnd.toISOString(),
+        is_closed: true,
+        total_attendances: attendances.length,
+        events: Array.from(eventMap.values()),
+      },
+    };
+  });
+
+// Admin-guarded: Delete attendance check-in
+export const deleteAttendanceFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      attendance_id: requiredString(data, 'attendance_id', 120),
+    };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    await prisma.attendance.delete({
+      where: { id: data.attendance_id },
+    });
+
+    return { success: true };
+  });
+
+export const exportBackupFn = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    const [members, attendances] = await Promise.all([
+      prisma.member.findMany({
+        include: { role: true },
+        orderBy: [
+          { role: { role: 'asc' } },
+          { last_name: 'asc' },
+          { first_name: 'asc' },
+        ],
+      }),
+      prisma.attendance.findMany({
+        orderBy: [
+          { check_in_day: 'asc' },
+          { check_in_time: 'asc' },
+        ],
+      }),
+    ]);
+
+    const exportedAt = new Date().toISOString();
+    const backup = {
+      application: 'gestore-pub',
+      version: 1,
+      exported_at: exportedAt,
+      notes: 'Backup completo: contiene hash password, token QR, soci, ruoli e storico presenze. Conservare in modo privato.',
+      data: {
+        members: members.map((member) => ({
+          id: member.id,
+          first_name: member.first_name,
+          last_name: member.last_name,
+          member_number: member.member_number,
+          qr_token: member.qr_token,
+          username: member.username,
+          password: member.password,
+          joined_at: member.joined_at.toISOString(),
+          expiry_date: member.expiry_date?.toISOString() ?? null,
+          password_changed: member.password_changed,
+          must_setup: member.must_setup,
+          role: member.role
+            ? {
+                id: member.role.id,
+                role: member.role.role,
+              }
+            : null,
+        })),
+        attendances: attendances.map((attendance) => ({
+          id: attendance.id,
+          member_id: attendance.member_id,
+          check_in_time: attendance.check_in_time.toISOString(),
+          check_in_day: attendance.check_in_day,
+          member_first_name: attendance.member_first_name,
+          member_last_name: attendance.member_last_name,
+          member_number: attendance.member_number,
+          member_was_deleted: attendance.member_was_deleted,
+        })),
+      },
+    };
+
+    const memberCsv = toCsv(
+      [
+        'id',
+        'role',
+        'first_name',
+        'last_name',
+        'member_number',
+        'username',
+        'joined_at',
+        'expiry_date',
+        'password_changed',
+        'must_setup',
+        'qr_token',
+      ],
+      backup.data.members.map((member) => [
+        member.id,
+        member.role?.role ?? '',
+        member.first_name,
+        member.last_name,
+        member.member_number ?? '',
+        member.username,
+        member.joined_at,
+        member.expiry_date ?? '',
+        member.password_changed,
+        member.must_setup,
+        member.qr_token ?? '',
+      ])
+    );
+
+    const attendanceCsv = toCsv(
+      [
+        'id',
+        'member_id',
+        'check_in_day',
+        'check_in_time',
+        'member_first_name',
+        'member_last_name',
+        'member_number',
+        'member_was_deleted',
+      ],
+      backup.data.attendances.map((attendance) => [
+        attendance.id,
+        attendance.member_id ?? '',
+        attendance.check_in_day,
+        attendance.check_in_time,
+        attendance.member_first_name,
+        attendance.member_last_name,
+        attendance.member_number,
+        attendance.member_was_deleted,
+      ])
+    );
+
+    return {
+      exported_at: exportedAt,
+      backup,
+      csv: {
+        members: memberCsv,
+        attendances: attendanceCsv,
+      },
+      counts: {
+        members: members.length,
+        attendances: attendances.length,
+      },
+    };
+  });
+
+export const restoreBackupFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    const backupText = data.backup;
+    if (typeof backupText !== 'string' || backupText.length < 20) {
+      throw new Error('File backup non valido');
+    }
+
+    if (Buffer.byteLength(backupText, 'utf8') > MAX_BACKUP_BYTES) {
+      throw new Error('Backup troppo grande');
+    }
+
+    return { backup: backupText };
+  })
+  .handler(async ({ data }) => {
+    const user = await getAuthenticatedUser();
+    assertReadyAdmin(user);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data.backup);
+    } catch {
+      throw new Error('Il file selezionato non e un backup JSON valido');
+    }
+
+    assertRecord(parsed);
+    if (parsed.application !== 'gestore-pub' || parsed.version !== 1) {
+      throw new Error('Backup non compatibile con questa applicazione');
+    }
+
+    const backupData = parsed.data;
+    assertRecord(backupData);
+    const members = backupData.members;
+    const attendances = backupData.attendances;
+
+    if (!Array.isArray(members) || !Array.isArray(attendances)) {
+      throw new Error('Backup incompleto: mancano soci o presenze');
+    }
+
+    if (members.length === 0 || members.length > MAX_BACKUP_MEMBERS) {
+      throw new Error('Backup non valido: numero soci fuori limite');
+    }
+
+    if (attendances.length > MAX_BACKUP_ATTENDANCES) {
+      throw new Error('Backup non valido: numero presenze fuori limite');
+    }
+
+    const memberInputs = members.map((rawMember) => {
+      assertRecord(rawMember);
+
+      const role = rawMember.role;
+      if (!role || typeof role !== 'object') {
+        throw new Error('Backup non valido: ruolo mancante');
+      }
+      assertRecord(role);
+
+      const roleValue = requiredString(role, 'role', 20);
+      assertAllowedRole(roleValue);
+
+      const password = requiredString(rawMember, 'password', 500);
+      assertPasswordHash(password);
+
+      return {
+        id: requiredString(rawMember, 'id', 120),
+        first_name: requiredString(rawMember, 'first_name', 80),
+        last_name: requiredString(rawMember, 'last_name', 80),
+        member_number: nullableString(rawMember, 'member_number', 80),
+        qr_token: nullableString(rawMember, 'qr_token', 120),
+        username: requiredString(rawMember, 'username', 80).toLowerCase(),
+        password,
+        joined_at: requiredDateString(rawMember, 'joined_at'),
+        expiry_date: optionalDateString(rawMember, 'expiry_date') ?? null,
+        password_changed: Boolean(rawMember.password_changed),
+        must_setup: Boolean(rawMember.must_setup),
+        role: {
+          id: requiredString(role, 'id', 120),
+          role: roleValue,
+        },
+      };
+    });
+
+    assertUniqueValues(memberInputs.map((member) => member.id), 'id soci');
+    assertUniqueValues(memberInputs.map((member) => member.username), 'username soci');
+    assertUniqueValues(
+      memberInputs.map((member) => member.member_number).filter((value): value is string => Boolean(value)),
+      'numeri tessera'
+    );
+    assertUniqueValues(
+      memberInputs.map((member) => member.qr_token).filter((value): value is string => Boolean(value)),
+      'token QR'
+    );
+    assertUniqueValues(memberInputs.map((member) => member.role.id), 'id ruoli');
+
+    const adminCount = memberInputs.filter((member) => member.role.role === 'admin').length;
+    if (adminCount !== 1) {
+      throw new Error('Il backup deve contenere esattamente un account amministratore');
+    }
+
+    const memberIds = new Set(memberInputs.map((member) => member.id));
+    const attendanceInputs = attendances.map((rawAttendance) => {
+      assertRecord(rawAttendance);
+      const memberId = typeof rawAttendance.member_id === 'string' && memberIds.has(rawAttendance.member_id)
+        ? rawAttendance.member_id
+        : null;
+
+      return {
+        id: requiredString(rawAttendance, 'id', 120),
+        member_id: memberId,
+        check_in_time: requiredDateString(rawAttendance, 'check_in_time'),
+        check_in_day: requiredString(rawAttendance, 'check_in_day', 20),
+        member_first_name: requiredString(rawAttendance, 'member_first_name', 80),
+        member_last_name: requiredString(rawAttendance, 'member_last_name', 80),
+        member_number: requiredString(rawAttendance, 'member_number', 80),
+        member_was_deleted: Boolean(rawAttendance.member_was_deleted) || !memberId,
+      };
+    });
+
+    assertUniqueValues(attendanceInputs.map((attendance) => attendance.id), 'id presenze');
+    assertUniqueValues(
+      attendanceInputs
+        .filter((attendance) => attendance.member_id)
+        .map((attendance) => `${attendance.member_id}:${attendance.check_in_day}`),
+      'presenze giornaliere'
+    );
+
+    await prisma.$transaction(async (tx) => {
+      await tx.session.deleteMany();
+      await tx.attendance.deleteMany();
+      await tx.userRole.deleteMany();
+      await tx.member.deleteMany();
+
+      for (const member of memberInputs) {
+        await tx.member.create({
+          data: {
+            id: member.id,
+            first_name: member.first_name,
+            last_name: member.last_name,
+            member_number: member.member_number,
+            qr_token: member.qr_token,
+            username: member.username,
+            password: member.password,
+            joined_at: new Date(member.joined_at),
+            expiry_date: member.expiry_date ? new Date(member.expiry_date) : null,
+            password_changed: member.password_changed,
+            must_setup: member.must_setup,
+            ...(member.role
+              ? {
+                  role: {
+                    create: {
+                      id: member.role.id,
+                      role: member.role.role,
+                    },
+                  },
+                }
+              : {}),
+          },
+        });
+      }
+
+      for (const attendance of attendanceInputs) {
+        await tx.attendance.create({
+          data: {
+            id: attendance.id,
+            member_id: attendance.member_id,
+            check_in_time: new Date(attendance.check_in_time),
+            check_in_day: attendance.check_in_day,
+            member_first_name: attendance.member_first_name,
+            member_last_name: attendance.member_last_name,
+            member_number: attendance.member_number,
+            member_was_deleted: attendance.member_was_deleted,
+          },
+        });
+      }
+    });
+
+    const currentAdminRestored = memberInputs.some((member) => member.id === user.id && member.role?.role === 'admin');
+    if (currentAdminRestored) {
+      await setSession(user.id);
+    }
+
+    return {
+      success: true,
+      keptSession: currentAdminRestored,
+      restored: {
+        members: memberInputs.length,
+        attendances: attendanceInputs.length,
+      },
+    };
+  });

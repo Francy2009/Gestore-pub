@@ -1,0 +1,65 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Member {
+  id               String    @id @default(uuid())
+  first_name       String
+  last_name        String
+  member_number    String?   @unique
+  qr_token         String?   @unique
+  username         String    @unique
+  password         String // Hashed password
+  joined_at        DateTime  @default(now())
+  expiry_date      DateTime?
+  password_changed Boolean   @default(false)
+  must_setup       Boolean   @default(false)
+
+  role        UserRole?
+  attendances Attendance[]
+  sessions    Session[]
+
+  @@index([last_name, first_name])
+  @@index([expiry_date])
+}
+
+model UserRole {
+  id       String @id @default(uuid())
+  role     String // "admin" or "user"
+  memberId String @unique
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model Attendance {
+  id                   String   @id @default(uuid())
+  member_id            String?
+  check_in_time        DateTime @default(now())
+  check_in_day         String
+  member_first_name    String
+  member_last_name     String
+  member_number        String
+  member_was_deleted   Boolean  @default(false)
+  member               Member?  @relation(fields: [member_id], references: [id], onDelete: SetNull)
+
+  @@unique([member_id, check_in_day])
+  @@index([check_in_day])
+  @@index([member_number])
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  memberId  String
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([expiresAt])
+}
