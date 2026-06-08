@@ -7,6 +7,11 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-06-08
+
+### Corretto
+- AppImage Linux con finestra bianca causata dal rendering WebKitGTK su alcune configurazioni grafiche.
+
 ## [1.0.6] - 2026-06-08
 
 ### Corretto
@@ -58,7 +63,8 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 - Autenticazione JWT + bcrypt
 - TypeScript strict mode
 
-[Unreleased]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.6...HEAD
+[Unreleased]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.3...v1.0.4
