@@ -9,6 +9,7 @@
     "dev": "vite dev --port 3000 --host",
     "dev:lan": "vite dev --port 3000 --host 0.0.0.0",
     "build": "vite build",
+    "build:tauri": "vite build --mode tauri",
     "preview": "vite preview",
     "test": "vitest run",
     "db:seed": "jiti prisma/seed.ts",

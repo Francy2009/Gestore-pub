@@ -7,6 +7,13 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-08
+
+### Corretto
+- Build release Tauri con output SPA statico per il bundle desktop.
+- Workflow GitHub Actions release con target Rust macOS corretti.
+- Configurazione Tauri semplificata con asset icona validi.
+
 ### Aggiunto
 - Configurazione GitHub Actions per build automatici multi-piattaforma
 - Sistema di aggiornamento automatico (Tauri Updater)
@@ -29,5 +36,6 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 - Autenticazione JWT + bcrypt
 - TypeScript strict mode
 
-[Unreleased]: https://github.com/FrancescoDellOrto/Gestore-pub/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/FrancescoDellOrto/Gestore-pub/releases/tag/v1.0.0
+[Unreleased]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/Francy2009/Gestore-pub/releases/tag/v1.0.0

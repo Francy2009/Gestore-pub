@@ -7,9 +7,34 @@ import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 
-const config = defineConfig({
+const config = defineConfig(({ command, mode }) => ({
   resolve: { tsconfigPaths: true },
-  plugins: [basicSsl(), devtools(), tailwindcss(), tanstackStart(), viteReact()],
-})
+  preview: {
+    host: '127.0.0.1',
+  },
+  plugins: [
+    devtools(),
+    command === 'serve' && process.env.TSS_PRERENDERING !== 'true'
+      ? basicSsl()
+      : null,
+    tailwindcss(),
+    tanstackStart(
+      mode === 'tauri'
+        ? {
+            sitemap: {
+              enabled: false,
+            },
+            spa: {
+              enabled: true,
+              prerender: {
+                outputPath: '/index',
+              },
+            },
+          }
+        : undefined,
+    ),
+    viteReact(),
+  ],
+}))
 
 export default config
