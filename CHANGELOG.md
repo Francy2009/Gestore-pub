@@ -7,6 +7,11 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-06-15
+
+### Aggiunto
+- Build release Linux con pacchetto `.rpm` per Fedora/RHEL, includendo `rpm` nelle dipendenze GitHub Actions.
+
 ## [1.0.10] - 2026-06-15
 
 ### Corretto
@@ -91,7 +96,8 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 - Autenticazione JWT + bcrypt
 - TypeScript strict mode
 
-[Unreleased]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.10...HEAD
+[Unreleased]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.11...HEAD
+[1.0.11]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/Francy2009/Gestore-pub/compare/v1.0.7...v1.0.8

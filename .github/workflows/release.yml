@@ -26,7 +26,7 @@ jobs:
             args: '--target x86_64-apple-darwin'
           - platform: 'ubuntu-24.04'
             rust-target: ''
-            args: ''
+            args: '--bundles deb,rpm,appimage'
           - platform: 'windows-2025'
             rust-target: ''
             args: ''
@@ -55,7 +55,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev rpm
 
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
@@ -87,7 +87,7 @@ jobs:
             - **Windows**: `gestore-pub_${{ github.ref_name }}_windows_x64.msi` / `.exe`
             - **macOS (Apple Silicon)**: `gestore-pub_${{ github.ref_name }}_macos_aarch64.dmg`
             - **macOS (Intel)**: `gestore-pub_${{ github.ref_name }}_macos_x64.dmg`
-            - **Linux**: `gestore-pub_${{ github.ref_name }}_linux_amd64.AppImage` / `.deb`
+            - **Linux**: `gestore-pub_${{ github.ref_name }}_linux_amd64.AppImage` / `.deb` / `.rpm`
             
             ### Changelog
             Vedi [CHANGELOG.md](https://github.com/Francy2009/Gestore-pub/blob/main/CHANGELOG.md) per i dettagli.
