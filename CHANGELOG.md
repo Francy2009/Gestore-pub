@@ -7,6 +7,15 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-06-16
+
+### Aggiunto
+- Pulsante di reset dati locali nella schermata iniziale desktop Tauri, con conferma e ritorno alla configurazione admin iniziale.
+- Appunti locali Codex ignorati da git per riprendere il contesto di lavoro senza pubblicare note operative.
+
+### Rimosso
+- Riquadro tecnico "Se resti fuori" dalle impostazioni admin, lasciando il recupero password tramite frase di recupero come percorso principale.
+
 ## [1.0.11] - 2026-06-15
 
 ### Aggiunto

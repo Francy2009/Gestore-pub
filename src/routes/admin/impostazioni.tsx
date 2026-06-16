@@ -10,7 +10,6 @@ import {
   FileSpreadsheet,
   FolderDown,
   KeyRound,
-  LifeBuoy,
   LockKeyhole,
   RefreshCw,
   Settings,
@@ -445,40 +444,6 @@ function AdminSettings() {
               {busyAction === 'recovery' ? 'Aggiornamento...' : 'Aggiorna frase'}
             </button>
           </form>
-        </section>
-
-        <section className="island-shell rounded-2xl p-5 sm:rounded-[2rem] sm:p-6">
-          <div className="relative mb-5 flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-600">
-              <LifeBuoy className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="display-title m-0 text-xl font-bold tracking-tight text-[var(--sea-ink)]">
-                Se resti fuori
-              </h2>
-              <p className="mt-1 text-xs font-semibold leading-relaxed text-[var(--sea-ink-soft)]">
-                Sul computer dove gira l'app apri il terminale nella cartella del progetto e lancia:
-              </p>
-            </div>
-          </div>
-
-          <div className="command-stack">
-            <div className="command-line">
-              <span className="command-line-label">Reset automatico</span>
-              <code>npm run db:reset-admin</code>
-            </div>
-
-            <div className="command-line">
-              <span className="command-line-label">Password scelta</span>
-              <code>ADMIN_RESET_PASSWORD=NuovaPass1! npm run db:reset-admin</code>
-            </div>
-          </div>
-
-          <div className="soft-note mt-4 text-xs font-semibold leading-relaxed text-[var(--sea-ink-soft)]">
-            <p>
-              Il comando crea una password temporanea per l'account admin e chiude le sessioni aperte. Al primo accesso l'app chiede di impostare una nuova password.
-            </p>
-          </div>
         </section>
 
         <section className="island-shell rounded-2xl p-5 sm:rounded-[2rem] sm:p-6 lg:col-span-2">
