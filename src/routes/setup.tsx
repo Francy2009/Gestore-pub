@@ -18,8 +18,9 @@ function Setup() {
   const [username, setUsername] = useState(user?.username || '')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [recoveryPhrase, setRecoveryPhrase] = useState('')
-  const [confirmRecoveryPhrase, setConfirmRecoveryPhrase] = useState('')
+  const [recoveryQuestion, setRecoveryQuestion] = useState('')
+  const [recoveryAnswer, setRecoveryAnswer] = useState('')
+  const [confirmRecoveryAnswer, setConfirmRecoveryAnswer] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -31,11 +32,13 @@ function Setup() {
   const hasNum = /\d/.test(password)
   const hasSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
   const matchesConfirm = password === confirmPassword && password.length > 0
-  const normalizedRecoveryPhrase = recoveryPhrase.trim().replace(/\s+/g, ' ')
-  const normalizedConfirmRecoveryPhrase = confirmRecoveryPhrase.trim().replace(/\s+/g, ' ')
-  const recoveryHasLength = normalizedRecoveryPhrase.length >= 16
-  const recoveryHasWords = normalizedRecoveryPhrase.split(' ').filter(Boolean).length >= 3
-  const recoveryMatches = normalizedRecoveryPhrase === normalizedConfirmRecoveryPhrase && normalizedRecoveryPhrase.length > 0
+  const normalizedRecoveryQuestion = recoveryQuestion.trim().replace(/\s+/g, ' ')
+  const normalizedRecoveryAnswer = recoveryAnswer.trim().replace(/\s+/g, ' ')
+  const normalizedConfirmRecoveryAnswer = confirmRecoveryAnswer.trim().replace(/\s+/g, ' ')
+  const recoveryQuestionValid = normalizedRecoveryQuestion.length >= 6 && normalizedRecoveryQuestion.length <= 120
+  const recoveryAnswerWords = normalizedRecoveryAnswer.split(' ').filter(Boolean).length
+  const recoveryAnswerValid = normalizedRecoveryAnswer.length >= 2 && normalizedRecoveryAnswer.length <= 80 && recoveryAnswerWords <= 4
+  const recoveryMatches = normalizedRecoveryAnswer.toLowerCase() === normalizedConfirmRecoveryAnswer.toLowerCase() && normalizedRecoveryAnswer.length > 0
 
   const canSubmit =
     hasMinLen &&
@@ -43,8 +46,8 @@ function Setup() {
     hasNum &&
     hasSymbol &&
     matchesConfirm &&
-    recoveryHasLength &&
-    recoveryHasWords &&
+    recoveryQuestionValid &&
+    recoveryAnswerValid &&
     recoveryMatches &&
     username.trim().length >= 3
 
@@ -53,7 +56,7 @@ function Setup() {
     setError(null)
 
     if (!canSubmit) {
-      setError('Password o frase di recupero non rispettano i requisiti di sicurezza.')
+      setError('Password o recupero account non rispettano i requisiti richiesti.')
       return
     }
 
@@ -64,7 +67,8 @@ function Setup() {
         data: {
           username: username.trim(),
           password: password,
-          recovery_phrase: normalizedRecoveryPhrase,
+          recovery_question: normalizedRecoveryQuestion,
+          recovery_answer: normalizedRecoveryAnswer,
         },
       })
 
@@ -100,7 +104,7 @@ function Setup() {
             Configura il tuo Account
           </h1>
           <p className="text-sm text-[var(--sea-ink-soft)] mt-1 text-center">
-            Scegli username, password e una frase di recupero. La frase viene salvata solo come hash e serve se dimentichi la password.
+            Scegli username, password, domanda personale e risposta. La risposta viene salvata solo come hash e serve se dimentichi la password.
           </p>
         </div>
 
@@ -136,24 +140,24 @@ function Setup() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 md:gap-6">
+          <div className="grid gap-4 md:grid-cols-3 md:gap-6">
             <div>
               <label
-                htmlFor="recoveryPhrase"
+                htmlFor="recoveryQuestion"
                 className="block text-xs font-semibold uppercase tracking-wider text-[var(--sea-ink-soft)] mb-2"
               >
-                Frase di recupero
+                Domanda personale
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[var(--sea-ink-soft)]">
                   <KeyRound className="h-4.5 w-4.5" />
                 </span>
                 <input
-                  id="recoveryPhrase"
-                  type="password"
-                  value={recoveryPhrase}
-                  onChange={(e) => setRecoveryPhrase(e.target.value)}
-                  placeholder="almeno tre parole segrete"
+                  id="recoveryQuestion"
+                  type="text"
+                  value={recoveryQuestion}
+                  onChange={(e) => setRecoveryQuestion(e.target.value)}
+                  placeholder="es. Nome della tua prima scuola?"
                   required
                   disabled={loading}
                   className="block w-full rounded-xl border border-[var(--line)] bg-white/40 py-3 pl-10 pr-4 text-sm text-[var(--sea-ink)] focus:border-amber-500/50 focus:bg-white/80 focus:outline-none focus:ring-2 focus:ring-amber-500/10"
@@ -163,21 +167,45 @@ function Setup() {
 
             <div>
               <label
-                htmlFor="confirmRecoveryPhrase"
+                htmlFor="recoveryAnswer"
                 className="block text-xs font-semibold uppercase tracking-wider text-[var(--sea-ink-soft)] mb-2"
               >
-                Conferma frase
+                Risposta
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[var(--sea-ink-soft)]">
                   <KeyRound className="h-4.5 w-4.5" />
                 </span>
                 <input
-                  id="confirmRecoveryPhrase"
+                  id="recoveryAnswer"
                   type="password"
-                  value={confirmRecoveryPhrase}
-                  onChange={(e) => setConfirmRecoveryPhrase(e.target.value)}
-                  placeholder="ripeti la frase"
+                  value={recoveryAnswer}
+                  onChange={(e) => setRecoveryAnswer(e.target.value)}
+                  placeholder="una parola o poche parole"
+                  required
+                  disabled={loading}
+                  className="block w-full rounded-xl border border-[var(--line)] bg-white/40 py-3 pl-10 pr-4 text-sm text-[var(--sea-ink)] focus:border-amber-500/50 focus:bg-white/80 focus:outline-none focus:ring-2 focus:ring-amber-500/10"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="confirmRecoveryAnswer"
+                className="block text-xs font-semibold uppercase tracking-wider text-[var(--sea-ink-soft)] mb-2"
+              >
+                Conferma risposta
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[var(--sea-ink-soft)]">
+                  <KeyRound className="h-4.5 w-4.5" />
+                </span>
+                <input
+                  id="confirmRecoveryAnswer"
+                  type="password"
+                  value={confirmRecoveryAnswer}
+                  onChange={(e) => setConfirmRecoveryAnswer(e.target.value)}
+                  placeholder="ripeti la risposta"
                   required
                   disabled={loading}
                   className="block w-full rounded-xl border border-[var(--line)] bg-white/40 py-3 pl-10 pr-4 text-sm text-[var(--sea-ink)] focus:border-amber-500/50 focus:bg-white/80 focus:outline-none focus:ring-2 focus:ring-amber-500/10"
@@ -284,12 +312,20 @@ function Setup() {
                   Le password coincidono
                 </li>
                 <li className="flex items-center gap-2">
-                  {recoveryHasLength && recoveryHasWords ? (
+                  {recoveryQuestionValid ? (
                     <span className="text-emerald-500 inline-flex items-center"><Check className="w-4 h-4" /></span>
                   ) : (
                     <span className="text-red-500 inline-flex items-center"><X className="w-4 h-4" /></span>
                   )}
-                  Frase: 3 parole e 16 caratteri
+                  Domanda: minimo 6 caratteri
+                </li>
+                <li className="flex items-center gap-2">
+                  {recoveryAnswerValid ? (
+                    <span className="text-emerald-500 inline-flex items-center"><Check className="w-4 h-4" /></span>
+                  ) : (
+                    <span className="text-red-500 inline-flex items-center"><X className="w-4 h-4" /></span>
+                  )}
+                  Risposta: da 1 a 4 parole
                 </li>
                 <li className="flex items-center gap-2">
                   {recoveryMatches ? (
@@ -297,7 +333,7 @@ function Setup() {
                   ) : (
                     <span className="text-red-500 inline-flex items-center"><X className="w-4 h-4" /></span>
                   )}
-                  Le frasi coincidono
+                  Le risposte coincidono
                 </li>
               </ul>
             </div>

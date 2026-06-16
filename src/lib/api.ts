@@ -10,6 +10,7 @@ function select<T extends keyof typeof serverApi & keyof typeof desktopApi>(key:
 export const setupValidator = select('setupValidator')
 export const changeAdminPasswordFn = select('changeAdminPasswordFn')
 export const changeAdminRecoveryPhraseFn = select('changeAdminRecoveryPhraseFn')
+export const getRecoveryQuestionFn = select('getRecoveryQuestionFn')
 export const recoverPasswordFn = select('recoverPasswordFn')
 export const loginFn = select('loginFn')
 export const logoutFn = select('logoutFn')

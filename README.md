@@ -7,8 +7,8 @@ Applicazione open source per club privati: anagrafica soci, tessere QR, rinnovi,
 - **Gestione Soci**: Anagrafica completa con numero tessera, QR code, date iscrizione/scadenza
 - **Presenze**: Check-in tramite QR code con storico giornaliero
 - **Autenticazione Sicura**: Hash PBKDF2-SHA512 (310.000 iterazioni), sessioni HttpOnly/Secure/SameSite
-- **Recupero Password**: Frase di recupero (hash separato) per reset senza email
-- **Backup Sicuro**: JSON standard senza hash password/frase recupero + CSV per consultazione
+- **Recupero Password**: Domanda personale + risposta breve hashata per reset senza email
+- **Backup Sicuro**: JSON standard senza hash password/risposta recupero + CSV per consultazione
 - **Export Personalizzabile**: Scegli cartella di destinazione (File System Access API) o Download default
 - **PWA Ready**: Installabile, offline-capable, manifest configurato
 - **Desktop Tauri**: Build nativi Windows/macOS/Linux
@@ -23,12 +23,12 @@ Al **primo avvio assoluto** (database vuoto), l'applicazione:
 3. Richiede tre campi:
    - **Username** (min 3 caratteri, univoco)
    - **Password robusta** (min 8 caratteri, 1 maiuscola, 1 numero, 1 simbolo)
-   - **Frase di recupero** (min 3 parole, 16 caratteri, confermata)
+   - **Domanda personale** e **risposta di recupero** breve, confermata
 
 ### Sicurezza della Configurazione Iniziale
 
 - **Nessuna password hardcoded**: L'admin iniziale ha password casuale generata crypto-safe
-- **Hash separati**: Password e frase di recupero usano salt diversi
+- **Hash separati**: Password e risposta di recupero usano salt diversi
 - **Sessioni revocate**: Dopo il setup, tutte le sessioni precedenti vengono invalidate
 - **Open source friendly**: Il codice sorgente non contiene segreti, solo logica di hash
 
@@ -40,15 +40,15 @@ Al **primo avvio assoluto** (database vuoto), l'applicazione:
 ✓ Almeno 1 simbolo (!@#$%^&*()_+-=[]{};':"\|,.<>/?)
 ```
 
-### Requisiti Frase di Recupero
+### Requisiti Recupero Account
 ```
-✓ Almeno 3 parole separate da spazi
-✓ Almeno 16 caratteri totali
-✓ Deve essere confermata identica
-✓ Viene normalizzata (spazi multipli → singolo, trim)
+✓ Domanda personale chiara
+✓ Risposta da 1 a 4 parole
+✓ Risposta confermata identica
+✓ La risposta viene normalizzata (spazi multipli → singolo, trim, minuscole)
 ```
 
-> ⚠️ **Importante**: La frase di recupero è l'**unico modo** per recuperare l'accesso se dimentichi la password. Conservala in un password manager o luogo sicuro. Non è recuperabile dal codice.
+> ⚠️ **Importante**: La risposta di recupero è l'**unico modo** per recuperare l'accesso se dimentichi la password. Conservala in un password manager o luogo sicuro. Non è recuperabile dal codice.
 
 ## 🚀 Avvio In Sviluppo
 
@@ -122,14 +122,14 @@ Nelle **Impostazioni Admin** (`/admin/impostazioni`):
 ### Tipi di Export
 | Tipo | Contenuto | Sensibilità |
 |------|-----------|-------------|
-| **Backup JSON standard** | Soci, ruoli, presenze e token QR; non include hash password/frase recupero | 🟡 Media - Dati personali |
+| **Backup JSON standard** | Soci, ruoli, presenze, domanda recupero e token QR; non include hash password/risposta recupero | 🟡 Media - Dati personali |
 | **CSV Soci** | Anagrafica (no hash, no QR token) | 🟡 Media - Dati personali |
 | **CSV Presenze** | Storico check-in (no hash) | 🟡 Media - Dati personali |
 | **PDF Tessere** | QR code + dati socio | 🟡 Media |
 | **PDF Report** | Report presenze, scadenze | 🟡 Media |
 
 ### Sicurezza Backup
-- Il backup JSON standard **non contiene hash password** né **hash frase recupero**
+- Il backup JSON standard **non contiene hash password** né **hash risposta recupero**
 - Contiene comunque **token QR** e dati personali dei soci
 - **Conserva backup su supporti protetti** (VeraCrypt, BitLocker, FileVault, LUKS)
 - Non condividere backup in chat, email non cifrate, cloud non protetto
@@ -139,7 +139,7 @@ Nelle **Impostazioni Admin** (`/admin/impostazioni`):
 ### Metodo 1: Frase di Recupero (Consigliato)
 1. Vai a `/login`
 2. Clicca **"Recupera password"**
-3. Inserisci: username + frase di recupero + nuova password
+3. Inserisci: username + risposta alla domanda personale + nuova password
 4. Accesso ripristinato, sessioni precedenti revocate
 
 ### Metodo 2: Reset da Terminale (Emergenza)
@@ -153,7 +153,7 @@ npm run db:reset-admin
 ADMIN_RESET_PASSWORD="TuaPassSicura1!" npm run db:reset-admin
 ```
 
-Dopo il reset: l'app forza **nuovamente** la configurazione di password e frase di recupero (`/setup`).
+Dopo il reset: l'app forza **nuovamente** la configurazione di password, domanda e risposta di recupero (`/setup`).
 
 ## 🧪 Test e Qualità
 
@@ -282,7 +282,7 @@ MIT License - Vedi `LICENSE` per dettagli.
 ## Note Di Sicurezza
 
 - L'app e open source: non fare affidamento su segreti nel codice.
-- Password e frase di recupero devono essere forti e uniche.
+- Password e risposta di recupero devono essere uniche e non ovvie.
 - Chi accede al dispositivo admin o ai backup puo tentare attacchi offline sugli hash.
 - I token QR identificano le tessere: non pubblicare backup o screenshot dei QR.
 - Aggiorna dipendenze e sistema operativo con regolarita.

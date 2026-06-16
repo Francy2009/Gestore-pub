@@ -7,6 +7,11 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-06-16
+
+### Modificato
+- Recupero password semplificato con domanda personale e risposta breve hashata al posto della frase lunga a 3 parole.
+
 ## [1.0.12] - 2026-06-16
 
 ### Aggiunto
@@ -14,7 +19,7 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 - Appunti locali Codex ignorati da git per riprendere il contesto di lavoro senza pubblicare note operative.
 
 ### Rimosso
-- Riquadro tecnico "Se resti fuori" dalle impostazioni admin, lasciando il recupero password tramite frase di recupero come percorso principale.
+- Riquadro tecnico "Se resti fuori" dalle impostazioni admin, lasciando il recupero password tramite flusso dedicato come percorso principale.
 
 ## [1.0.11] - 2026-06-15
 

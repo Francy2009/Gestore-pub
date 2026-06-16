@@ -30,7 +30,7 @@ L'applicazione tratta **esclusivamente** i dati strettamente necessari alla gest
 | **Anagrafica Soci** | Nome, Cognome, Numero tessera (opzionale), Username univoco | Esecuzione contratto/statuto associativo |
 | **Temporali** | Data iscrizione, Data scadenza tessera (opzionale) | Esecuzione contratto/statuto associativo |
 | **Presenze** | Timestamp check-in, Giorno check-in, Flag socio eliminato | Legittimo interesse / Esecuzione contratto |
-| **Autenticazione** | Username, Hash password (PBKDF2-SHA512), Hash frase recupero (PBKDF2-SHA512) | Sicurezza sistemi / Obbligo legale protezione dati |
+| **Autenticazione** | Username, domanda recupero, hash password (PBKDF2-SHA512), hash risposta recupero (PBKDF2-SHA512) | Sicurezza sistemi / Obbligo legale protezione dati |
 | **Token QR** | Token base64url 32 byte (univoco per tessera) | Esecuzione contratto / Legittimo interesse |
 | **Export/Backup** | JSON completo (tutto sopra), CSV (solo anagrafica/presenze, no hash) | Obbligo conservazione / Legittimo interesse admin |
 
@@ -57,7 +57,7 @@ Salt:          16 byte casuali (crypto.randomBytes) per ogni hash
 Key length:    64 byte (512 bit)
 Formato:       pbkdf2_sha512$iterations$salt$hash (hex)
 ```
-- **Password** e **frase di recupero** usano **salt indipendenti**
+- **Password** e **risposta di recupero** usano **salt indipendenti**
 - Confronto in **constant-time** (`crypto.timingSafeEqual`)
 - Supporto legacy per migrazione da vecchi hash (1.000 iterazioni)
 
@@ -157,7 +157,7 @@ add_header Permissions-Policy "geolocation=(), microphone=(), camera=()";
 |----------|------------|----------------------|---------------|
 | Identificazione socio | Nome, Cognome, Numero tessera, Username | Esecuzione contratto/statuto | Fino a revoca iscrizione + obblighi legge |
 | Autenticazione accesso | Username, Hash password, Hash recovery | Sicurezza sistemi / Obbligo protezione dati | Fino a revoca account |
-| Recupero credenziali | Username, Hash recovery phrase | Sicurezza / Legittimo interesse | Fino a revoca account |
+| Recupero credenziali | Username, domanda recupero, hash risposta recupero | Sicurezza / Legittimo interesse | Fino a revoca account |
 | Registrazione presenze | Token QR, Timestamp, Giorno | Esecuzione contratto / Legittimo interesse | Definita da statuto/regolamento club |
 | Generazione tessere QR | Token QR, Dati anagrafici | Esecuzione contratto | Durata validità tessera |
 | Report/Statistiche | Presenze aggregate, Anagrafica | Legittimo interesse admin / Obblighi associativi | Definita da admin |
@@ -225,7 +225,7 @@ Il titolare (admin club) deve definire e applicare:
 
 ### 10.1 Implementate nel Codice
 - ✅ Hashing credenziali PBKDF2-SHA512 (310k iterazioni)
-- ✅ Salt univoci per password e recovery phrase
+- ✅ Salt univoci per password e risposta recupero
 - ✅ Confronto timing-safe
 - ✅ Sessioni HttpOnly, Secure, SameSite=Strict
 - ✅ Rate limiting login/recovery

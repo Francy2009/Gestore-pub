@@ -11,6 +11,7 @@ type AuthenticatedUser = {
 };
 
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+const DEFAULT_RECOVERY_QUESTION = 'Qual e la tua risposta di recupero?';
 const DUMMY_PASSWORD_HASH = 'pbkdf2_sha512$310000$00000000000000000000000000000000$ae47c89509232aade637ffdfb5cd6455bae8d1cb5397d1378dd1dd1113c3e81760f52a2ae4c57c4e850da8b186461ecc46ec269759101aad6483086904322d72';
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
@@ -244,16 +245,31 @@ function assertStrongPassword(password: string, message: string) {
   }
 }
 
-function normalizeRecoveryPhrase(value: string): string {
+function normalizeRecoveryQuestion(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
 }
 
-function assertStrongRecoveryPhrase(phrase: string) {
-  const normalized = normalizeRecoveryPhrase(phrase);
+function normalizeRecoveryAnswer(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function normalizeLegacyRecoveryPhrase(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function assertRecoveryQuestion(question: string) {
+  const normalized = normalizeRecoveryQuestion(question);
+  if (normalized.length < 6 || normalized.length > 120) {
+    throw new Error('La domanda di recupero deve contenere tra 6 e 120 caratteri.');
+  }
+}
+
+function assertRecoveryAnswer(answer: string) {
+  const normalized = normalizeRecoveryAnswer(answer);
   const wordCount = normalized.split(' ').filter(Boolean).length;
 
-  if (normalized.length < 16 || wordCount < 3) {
-    throw new Error('La frase di recupero deve contenere almeno 3 parole e 16 caratteri.');
+  if (normalized.length < 2 || normalized.length > 80 || wordCount > 4) {
+    throw new Error('La risposta di recupero deve contenere da 1 a 4 parole.');
   }
 }
 
@@ -393,6 +409,7 @@ async function getBootstrapAdmin() {
         qr_token: null,
         username: 'admin',
         password: hashPassword(crypto.randomBytes(32).toString('base64url')),
+        recovery_question: null,
         recovery_phrase_hash: null,
         joined_at: new Date(),
         expiry_date: null,
@@ -415,7 +432,7 @@ async function getBootstrapAdmin() {
   });
 
   if (!admin || admin.role?.role !== 'admin') return null;
-  if (!admin.must_setup && admin.password_changed && admin.recovery_phrase_hash) return null;
+  if (!admin.must_setup && admin.password_changed && admin.recovery_question && admin.recovery_phrase_hash) return null;
 
   return admin;
 }
@@ -447,7 +464,8 @@ export const setupValidator = createServerFn({ method: 'POST' })
     return {
       username: requiredString(data, 'username', 80),
       password: requiredString(data, 'password', 256),
-      recovery_phrase: requiredString(data, 'recovery_phrase', 500),
+      recovery_question: requiredString(data, 'recovery_question', 120),
+      recovery_answer: requiredString(data, 'recovery_answer', 80),
     };
   })
   .handler(async ({ data }) => {
@@ -457,7 +475,8 @@ export const setupValidator = createServerFn({ method: 'POST' })
     }
 
     assertStrongPassword(data.password, 'La password deve contenere almeno 8 caratteri, una maiuscola, un numero e un simbolo.');
-    assertStrongRecoveryPhrase(data.recovery_phrase);
+    assertRecoveryQuestion(data.recovery_question);
+    assertRecoveryAnswer(data.recovery_answer);
 
     const trimmedUsername = data.username.trim().toLowerCase();
     if (trimmedUsername.length < 3) {
@@ -477,7 +496,8 @@ export const setupValidator = createServerFn({ method: 'POST' })
     }
 
     const hashed = hashPassword(data.password);
-    const recoveryPhraseHash = hashPassword(normalizeRecoveryPhrase(data.recovery_phrase));
+    const recoveryQuestion = normalizeRecoveryQuestion(data.recovery_question);
+    const recoveryAnswerHash = hashPassword(normalizeRecoveryAnswer(data.recovery_answer));
 
     try {
       await prisma.member.update({
@@ -485,7 +505,8 @@ export const setupValidator = createServerFn({ method: 'POST' })
         data: {
           username: trimmedUsername,
           password: hashed,
-          recovery_phrase_hash: recoveryPhraseHash,
+          recovery_question: recoveryQuestion,
+          recovery_phrase_hash: recoveryAnswerHash,
           password_changed: true,
           must_setup: false,
         },
@@ -579,7 +600,8 @@ export const changeAdminRecoveryPhraseFn = createServerFn({ method: 'POST' })
     assertRecord(data);
     return {
       current_password: requiredString(data, 'current_password', 256),
-      recovery_phrase: requiredString(data, 'recovery_phrase', 500),
+      recovery_question: requiredString(data, 'recovery_question', 120),
+      recovery_answer: requiredString(data, 'recovery_answer', 80),
     };
   })
   .handler(async ({ data }) => {
@@ -603,16 +625,18 @@ export const changeAdminRecoveryPhraseFn = createServerFn({ method: 'POST' })
       throw new Error('La password attuale non è corretta');
     }
 
-    assertStrongRecoveryPhrase(data.recovery_phrase);
+    assertRecoveryQuestion(data.recovery_question);
+    assertRecoveryAnswer(data.recovery_answer);
 
     await prisma.member.update({
       where: { id: admin.id },
       data: {
-        recovery_phrase_hash: hashPassword(normalizeRecoveryPhrase(data.recovery_phrase)),
+        recovery_question: normalizeRecoveryQuestion(data.recovery_question),
+        recovery_phrase_hash: hashPassword(normalizeRecoveryAnswer(data.recovery_answer)),
       },
     });
 
-    // Revoke all existing sessions (security: rotate session on recovery phrase change)
+    // Revoke all existing sessions (security: rotate session on recovery answer change)
     await prisma.session.updateMany({
       where: {
         memberId: admin.id,
@@ -629,12 +653,38 @@ export const changeAdminRecoveryPhraseFn = createServerFn({ method: 'POST' })
     return { success: true };
   });
 
+export const getRecoveryQuestionFn = createServerFn({ method: 'GET' })
+  .inputValidator((data: unknown) => {
+    assertRecord(data);
+    return {
+      username: requiredString(data, 'username', 80),
+    };
+  })
+  .handler(async ({ data }) => {
+    const username = data.username.trim().toLowerCase();
+    const member = await prisma.member.findUnique({
+      where: { username },
+      select: {
+        recovery_question: true,
+        recovery_phrase_hash: true,
+      },
+    });
+
+    if (!member?.recovery_phrase_hash) {
+      return { question: null };
+    }
+
+    return {
+      question: member.recovery_question || DEFAULT_RECOVERY_QUESTION,
+    };
+  });
+
 export const recoverPasswordFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => {
     assertRecord(data);
     return {
       username: requiredString(data, 'username', 80),
-      recovery_phrase: requiredString(data, 'recovery_phrase', 500),
+      recovery_answer: requiredString(data, 'recovery_answer', 500),
       new_password: requiredString(data, 'new_password', 256),
     };
   })
@@ -649,21 +699,28 @@ export const recoverPasswordFn = createServerFn({ method: 'POST' })
       select: {
         id: true,
         password: true,
+        recovery_question: true,
         recovery_phrase_hash: true,
       },
     });
 
-    // Always verify recovery phrase (constant-time using dummy hash for non-existent users)
-    const storedRecoveryHash = member?.recovery_phrase_hash ?? DUMMY_PASSWORD_HASH;
-    const isValidRecovery = verifyPassword(normalizeRecoveryPhrase(data.recovery_phrase), storedRecoveryHash);
+    if (member?.recovery_question) {
+      assertRecoveryAnswer(data.recovery_answer);
+    }
 
-    // Check if member exists AND has recovery phrase set AND phrase is valid
+    // Always verify recovery answer (constant-time using dummy hash for non-existent users)
+    const storedRecoveryHash = member?.recovery_phrase_hash ?? DUMMY_PASSWORD_HASH;
+    const isValidRecovery =
+      verifyPassword(normalizeRecoveryAnswer(data.recovery_answer), storedRecoveryHash) ||
+      verifyPassword(normalizeLegacyRecoveryPhrase(data.recovery_answer), storedRecoveryHash);
+
+    // Check if member exists AND has recovery answer set AND answer is valid
     const memberExistsAndValid = member && member.recovery_phrase_hash && isValidRecovery;
 
     if (!memberExistsAndValid) {
       // Always record failure (even for non-existent users) to prevent enumeration
       await recordRecoveryFailure(username);
-      throw new Error('Username o frase di recupero non validi.');
+      throw new Error('Username o risposta di recupero non validi.');
     }
 
     if (verifyPassword(data.new_password, member.password)) {
@@ -1337,7 +1394,7 @@ export const exportBackupFn = createServerFn({ method: 'GET' })
       application: 'gestore-pub',
       version: 1,
       exported_at: exportedAt,
-      notes: 'Backup standard: contiene anagrafica soci, token QR, ruoli e storico presenze. NON contiene hash password né hash frase di recupero. Per migrazione completa usare exportFullBackupFn (solo admin esperto).',
+      notes: 'Backup standard: contiene anagrafica soci, token QR, ruoli, domanda di recupero e storico presenze. NON contiene hash password né hash risposta di recupero. Per migrazione completa usare exportFullBackupFn (solo admin esperto).',
       data: {
         members: members.map((member) => ({
           id: member.id,
@@ -1346,11 +1403,12 @@ export const exportBackupFn = createServerFn({ method: 'GET' })
           member_number: member.member_number,
           qr_token: member.qr_token,
           username: member.username,
+          recovery_question: member.recovery_question,
           joined_at: member.joined_at.toISOString(),
           expiry_date: member.expiry_date?.toISOString() ?? null,
           password_changed: member.password_changed,
           must_setup: member.must_setup,
-          has_recovery_phrase: Boolean(member.recovery_phrase_hash),
+          has_recovery_answer: Boolean(member.recovery_phrase_hash),
           role: member.role
             ? {
                 id: member.role.id,
@@ -1379,12 +1437,13 @@ export const exportBackupFn = createServerFn({ method: 'GET' })
         'last_name',
         'member_number',
         'username',
+        'recovery_question',
         'joined_at',
         'expiry_date',
         'password_changed',
         'must_setup',
         'qr_token',
-        'has_recovery_phrase',
+        'has_recovery_answer',
       ],
       backup.data.members.map((member) => [
         member.id,
@@ -1393,12 +1452,13 @@ export const exportBackupFn = createServerFn({ method: 'GET' })
         member.last_name,
         member.member_number ?? '',
         member.username,
+        member.recovery_question ?? '',
         member.joined_at,
         member.expiry_date ?? '',
         member.password_changed,
         member.must_setup,
         member.qr_token ?? '',
-        member.has_recovery_phrase,
+        member.has_recovery_answer,
       ])
     );
 
@@ -1439,7 +1499,7 @@ export const exportBackupFn = createServerFn({ method: 'GET' })
     };
   });
 
-// Expert-only: Full backup including password hashes and recovery phrase hashes
+// Expert-only: Full backup including password hashes and recovery answer hashes
 // WARNING: Contains sensitive credentials. Encrypt before storing/transferring.
 export const exportFullBackupFn = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -1466,7 +1526,7 @@ export const exportFullBackupFn = createServerFn({ method: 'GET' })
     const exportedAt = new Date().toISOString();
     const backup = {
       application: 'gestore-pub',
-      notes: 'BACKUP COMPLETO (ESPERTO): Contiene hash password, hash frase recupero, token QR. CIFRARE PRIMA DI SALVARE/TRASFERIRE. Uso solo per migrazione server o disaster recovery.',
+      notes: 'BACKUP COMPLETO (ESPERTO): Contiene hash password, hash risposta recupero, token QR. CIFRARE PRIMA DI SALVARE/TRASFERIRE. Uso solo per migrazione server o disaster recovery.',
       data: {
         members: members.map((member) => ({
           id: member.id,
@@ -1476,6 +1536,7 @@ export const exportFullBackupFn = createServerFn({ method: 'GET' })
           qr_token: member.qr_token,
           username: member.username,
           password: member.password,
+          recovery_question: member.recovery_question,
           recovery_phrase_hash: member.recovery_phrase_hash,
           joined_at: member.joined_at.toISOString(),
           expiry_date: member.expiry_date?.toISOString() ?? null,
@@ -1509,12 +1570,13 @@ export const exportFullBackupFn = createServerFn({ method: 'GET' })
         'last_name',
         'member_number',
         'username',
+        'recovery_question',
         'joined_at',
         'expiry_date',
         'password_changed',
         'must_setup',
         'qr_token',
-        'recovery_phrase_set',
+        'recovery_answer_set',
       ],
       backup.data.members.map((member) => [
         member.id,
@@ -1523,6 +1585,7 @@ export const exportFullBackupFn = createServerFn({ method: 'GET' })
         member.last_name,
         member.member_number ?? '',
         member.username,
+        member.recovery_question ?? '',
         member.joined_at,
         member.expiry_date ?? '',
         member.password_changed,
@@ -1629,13 +1692,14 @@ export const restoreBackupFn = createServerFn({ method: 'POST' })
       assertAllowedRole(roleValue);
 
       // Support both old (full) and new (standard) backup formats
-      // New format: has_recovery_phrase boolean, no password/recovery_phrase_hash
+      // New format: has_recovery_answer boolean, no password/recovery_phrase_hash
       // Old format: password and recovery_phrase_hash strings
       const hasPassword = typeof rawMember.password === 'string' && rawMember.password.length > 0;
       const hasRecoveryHash = typeof rawMember.recovery_phrase_hash === 'string' && rawMember.recovery_phrase_hash.length > 0;
       const isFullBackup = hasPassword || hasRecoveryHash;
 
       let password: string;
+      const recoveryQuestion = nullableString(rawMember, 'recovery_question', 120);
       let recoveryPhraseHash: string | null = null;
 
       if (isFullBackup) {
@@ -1648,7 +1712,7 @@ export const restoreBackupFn = createServerFn({ method: 'POST' })
           recoveryPhraseHash = rph;
         }
       } else {
-        // Standard backup - generate new secure password, no recovery phrase
+        // Standard backup - generate new secure password, no recovery answer
         password = hashPassword(generateTemporaryPassword(16));
         // recoveryPhraseHash remains null
       }
@@ -1661,6 +1725,7 @@ export const restoreBackupFn = createServerFn({ method: 'POST' })
         qr_token: nullableString(rawMember, 'qr_token', 120),
         username: requiredString(rawMember, 'username', 80).toLowerCase(),
         password,
+        recovery_question: recoveryQuestion,
         recovery_phrase_hash: recoveryPhraseHash,
         joined_at: requiredDateString(rawMember, 'joined_at'),
         expiry_date: optionalDateString(rawMember, 'expiry_date') ?? null,
@@ -1733,6 +1798,7 @@ export const restoreBackupFn = createServerFn({ method: 'POST' })
             qr_token: member.qr_token,
             username: member.username,
             password: member.password,
+            recovery_question: member.recovery_question,
             recovery_phrase_hash: member.recovery_phrase_hash,
             joined_at: new Date(member.joined_at),
             expiry_date: member.expiry_date ? new Date(member.expiry_date) : null,

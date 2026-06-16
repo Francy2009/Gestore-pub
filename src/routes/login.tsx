@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
-import { loginFn, recoverPasswordFn } from '../lib/api'
+import { getRecoveryQuestionFn, loginFn, recoverPasswordFn } from '../lib/api'
 import { KeyRound, ShieldAlert, LogIn, Lock, User } from 'lucide-react'
 
 export const Route = createFileRoute('/login')({
@@ -11,13 +11,42 @@ function Login() {
   const [mode, setMode] = useState<'login' | 'recovery'>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [recoveryPhrase, setRecoveryPhrase] = useState('')
+  const [recoveryQuestion, setRecoveryQuestion] = useState<string | null>(null)
+  const [recoveryAnswer, setRecoveryAnswer] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const navigate = useNavigate()
+
+  const loadRecoveryQuestion = async () => {
+    setError(null)
+    setRecoveryQuestion(null)
+
+    const trimmedUsername = username.trim()
+    if (!trimmedUsername) {
+      setError('Inserisci prima lo username.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await getRecoveryQuestionFn({
+        data: {
+          username: trimmedUsername,
+        },
+      })
+      setRecoveryQuestion(res.question)
+      if (!res.question) {
+        setError('Domanda di recupero non trovata per questo username.')
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Errore durante il recupero della domanda.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -83,7 +112,7 @@ function Login() {
       const res = await recoverPasswordFn({
         data: {
           username: username.trim(),
-          recovery_phrase: recoveryPhrase.trim().replace(/\s+/g, ' '),
+          recovery_answer: recoveryAnswer.trim().replace(/\s+/g, ' '),
           new_password: newPassword,
         },
       })
@@ -111,7 +140,7 @@ function Login() {
           <p className="text-sm text-[var(--sea-ink-soft)] mt-1 text-center">
             {mode === 'login'
               ? 'Inserisci le tue credenziali per accedere alla tua area privata.'
-              : 'Inserisci username, frase di recupero e una nuova password robusta.'}
+              : 'Inserisci lo username, rispondi alla domanda personale e scegli una nuova password robusta.'}
           </p>
         </div>
 
@@ -173,23 +202,39 @@ function Login() {
             </div>
           ) : (
             <>
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-200">
+                    {recoveryQuestion || 'Carica la domanda personale'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={loadRecoveryQuestion}
+                    disabled={loading}
+                    className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-amber-500/25 bg-white/40 px-3 py-2 text-xs font-bold text-amber-700 transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-200"
+                  >
+                    Mostra domanda
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label
-                  htmlFor="recoveryPhrase"
+                  htmlFor="recoveryAnswer"
                   className="block text-xs font-semibold uppercase tracking-wider text-[var(--sea-ink-soft)] mb-2"
                 >
-                  Frase di recupero
+                  Risposta
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[var(--sea-ink-soft)]">
                     <KeyRound className="h-4.5 w-4.5" />
                   </span>
                   <input
-                    id="recoveryPhrase"
+                    id="recoveryAnswer"
                     type="password"
-                    value={recoveryPhrase}
-                    onChange={(e) => setRecoveryPhrase(e.target.value)}
-                    placeholder="la frase scelta al primo avvio"
+                    value={recoveryAnswer}
+                    onChange={(e) => setRecoveryAnswer(e.target.value)}
+                    placeholder="la risposta scelta al primo avvio"
                     required
                     disabled={loading}
                     className="block w-full rounded-xl border border-[var(--line)] bg-white/40 py-3 pl-10 pr-4 text-sm text-[var(--sea-ink)] placeholder-stone-400 focus:border-rose-500/50 focus:bg-white/80 focus:outline-none focus:ring-2 focus:ring-rose-500/10"
@@ -250,6 +295,7 @@ function Login() {
             onClick={() => {
               setMode(mode === 'login' ? 'recovery' : 'login')
               setError(null)
+              setRecoveryQuestion(null)
             }}
             disabled={loading}
             className="w-full cursor-pointer rounded-xl border border-[var(--line)] bg-white/30 px-3 py-2.5 text-xs font-bold text-[var(--sea-ink-soft)] transition hover:bg-white/50 hover:text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-60"

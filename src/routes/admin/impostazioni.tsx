@@ -46,8 +46,9 @@ function AdminSettings() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [recoveryCurrentPassword, setRecoveryCurrentPassword] = useState('')
-  const [newRecoveryPhrase, setNewRecoveryPhrase] = useState('')
-  const [confirmRecoveryPhrase, setConfirmRecoveryPhrase] = useState('')
+  const [newRecoveryQuestion, setNewRecoveryQuestion] = useState('')
+  const [newRecoveryAnswer, setNewRecoveryAnswer] = useState('')
+  const [confirmRecoveryAnswer, setConfirmRecoveryAnswer] = useState('')
   const [restoreConfirm, setRestoreConfirm] = useState('')
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
@@ -131,11 +132,12 @@ function AdminSettings() {
     event.preventDefault()
     clearMessages()
 
-    const normalizedPhrase = newRecoveryPhrase.trim().replace(/\s+/g, ' ')
-    const normalizedConfirm = confirmRecoveryPhrase.trim().replace(/\s+/g, ' ')
+    const normalizedQuestion = newRecoveryQuestion.trim().replace(/\s+/g, ' ')
+    const normalizedAnswer = newRecoveryAnswer.trim().replace(/\s+/g, ' ')
+    const normalizedConfirm = confirmRecoveryAnswer.trim().replace(/\s+/g, ' ')
 
-    if (normalizedPhrase !== normalizedConfirm) {
-      setErrorMsg('Le frasi di recupero non coincidono.')
+    if (normalizedAnswer.toLowerCase() !== normalizedConfirm.toLowerCase()) {
+      setErrorMsg('Le risposte di recupero non coincidono.')
       return
     }
 
@@ -144,15 +146,17 @@ function AdminSettings() {
       await changeAdminRecoveryPhraseFn({
         data: {
           current_password: recoveryCurrentPassword,
-          recovery_phrase: normalizedPhrase,
+          recovery_question: normalizedQuestion,
+          recovery_answer: normalizedAnswer,
         },
       })
       setRecoveryCurrentPassword('')
-      setNewRecoveryPhrase('')
-      setConfirmRecoveryPhrase('')
-      setSuccessMsg('Frase di recupero aggiornata. Ricordala o conservala in un password manager.')
+      setNewRecoveryQuestion('')
+      setNewRecoveryAnswer('')
+      setConfirmRecoveryAnswer('')
+      setSuccessMsg('Domanda e risposta di recupero aggiornate. Ricorda la risposta esatta.')
     } catch (error: any) {
-      setErrorMsg(error?.message || 'Errore durante il cambio frase di recupero.')
+      setErrorMsg(error?.message || 'Errore durante il cambio del recupero account.')
     } finally {
       setBusyAction(null)
     }
@@ -375,10 +379,10 @@ function AdminSettings() {
             </div>
             <div className="min-w-0">
               <h2 className="display-title m-0 text-xl font-bold tracking-tight text-[var(--sea-ink)]">
-                Frase di recupero
+                Recupero account
               </h2>
               <p className="mt-1 text-xs font-semibold leading-relaxed text-[var(--sea-ink-soft)]">
-                Aggiorna la frase usata dalla schermata login per recuperare una password dimenticata.
+                Aggiorna la domanda personale e la risposta breve usate per recuperare una password dimenticata.
               </p>
             </div>
           </div>
@@ -400,15 +404,31 @@ function AdminSettings() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label htmlFor="settings-new-recovery-question" className="mb-2 block text-xs font-bold uppercase text-[var(--sea-ink-soft)]">
+                  Domanda personale
+                </label>
+                <input
+                  id="settings-new-recovery-question"
+                  type="text"
+                  value={newRecoveryQuestion}
+                  onChange={(event) => setNewRecoveryQuestion(event.target.value)}
+                  disabled={isBusy}
+                  required
+                  placeholder="es. Nome della tua prima scuola?"
+                  className="block w-full rounded-xl border border-[var(--line)] bg-white/50 px-4 py-3 text-sm text-[var(--sea-ink)] focus:border-teal-500/50 focus:outline-none"
+                />
+              </div>
+
               <div>
                 <label htmlFor="settings-new-recovery" className="mb-2 block text-xs font-bold uppercase text-[var(--sea-ink-soft)]">
-                  Nuova frase
+                  Risposta
                 </label>
                 <input
                   id="settings-new-recovery"
                   type="password"
-                  value={newRecoveryPhrase}
-                  onChange={(event) => setNewRecoveryPhrase(event.target.value)}
+                  value={newRecoveryAnswer}
+                  onChange={(event) => setNewRecoveryAnswer(event.target.value)}
                   disabled={isBusy}
                   required
                   className="block w-full rounded-xl border border-[var(--line)] bg-white/50 px-4 py-3 text-sm text-[var(--sea-ink)] focus:border-teal-500/50 focus:outline-none"
@@ -417,13 +437,13 @@ function AdminSettings() {
 
               <div>
                 <label htmlFor="settings-confirm-recovery" className="mb-2 block text-xs font-bold uppercase text-[var(--sea-ink-soft)]">
-                  Conferma frase
+                  Conferma risposta
                 </label>
                 <input
                   id="settings-confirm-recovery"
                   type="password"
-                  value={confirmRecoveryPhrase}
-                  onChange={(event) => setConfirmRecoveryPhrase(event.target.value)}
+                  value={confirmRecoveryAnswer}
+                  onChange={(event) => setConfirmRecoveryAnswer(event.target.value)}
                   disabled={isBusy}
                   required
                   className="block w-full rounded-xl border border-[var(--line)] bg-white/50 px-4 py-3 text-sm text-[var(--sea-ink)] focus:border-teal-500/50 focus:outline-none"
@@ -432,7 +452,7 @@ function AdminSettings() {
             </div>
 
             <div className="rounded-xl border border-teal-500/20 bg-teal-500/10 p-3 text-xs font-semibold leading-relaxed text-teal-700 dark:text-teal-200">
-              Minimo 3 parole e 16 caratteri. La frase non viene salvata in chiaro: resta recuperabile solo se la ricordi esattamente.
+              La domanda viene mostrata al recupero. La risposta puo essere una parola o poche parole e non viene salvata in chiaro.
             </div>
 
             <button
@@ -441,7 +461,7 @@ function AdminSettings() {
               className="mobile-action inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-3 text-xs font-extrabold text-white shadow-md shadow-teal-500/20 transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <KeyRound className="h-4 w-4" />
-              {busyAction === 'recovery' ? 'Aggiornamento...' : 'Aggiorna frase'}
+              {busyAction === 'recovery' ? 'Aggiornamento...' : 'Aggiorna recupero'}
             </button>
           </form>
         </section>
@@ -531,7 +551,7 @@ function AdminSettings() {
               </div>
 
               <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs font-semibold leading-relaxed text-amber-700 dark:text-amber-200">
-                Il backup contiene hash password, hash frase recupero e token QR: tienilo su una chiavetta o disco protetto, non in una chat pubblica.
+                Il backup contiene hash password, hash risposta recupero e token QR: tienilo su una chiavetta o disco protetto, non in una chat pubblica.
               </div>
             </div>
 

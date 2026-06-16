@@ -21,7 +21,8 @@ describe('desktop first launch bootstrap', () => {
       data: {
         username: 'admin',
         password: 'NuovaPass1!',
-        recovery_phrase: 'frase recupero molto sicura',
+        recovery_question: 'Nome della tua prima scuola?',
+        recovery_answer: 'verdi',
       },
     })
 

@@ -8,6 +8,7 @@ type DesktopMember = {
   qr_token: string | null
   username: string
   password_hash: string
+  recovery_question: string | null
   recovery_phrase_hash: string | null
   joined_at: string
   expiry_date: string | null
@@ -36,6 +37,7 @@ type DesktopDb = {
 
 const DB_KEY = 'gestore-pub:desktop-db'
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/
+const DEFAULT_RECOVERY_QUESTION = 'Qual e la tua risposta di recupero?'
 
 type FnArgs = { data?: Record<string, unknown> } | undefined
 
@@ -187,6 +189,7 @@ function parseDb(raw: string | null): DesktopDb | null {
     }
     parsed.members = parsed.members.map((member) => ({
       ...member,
+      recovery_question: member.recovery_question ?? null,
       recovery_phrase_hash: member.recovery_phrase_hash ?? null,
     }))
     return parsed
@@ -210,6 +213,7 @@ async function createInitialDb(): Promise<DesktopDb> {
         qr_token: null,
         username: 'admin',
         password_hash: await digestPassword(randomToken()),
+        recovery_question: null,
         recovery_phrase_hash: null,
         joined_at: now,
         expiry_date: null,
@@ -237,7 +241,7 @@ async function loadDb() {
   if (
     bootstrapAdmin &&
     !db.current_user_id &&
-    (bootstrapAdmin.must_setup || !bootstrapAdmin.password_changed || !bootstrapAdmin.recovery_phrase_hash)
+    (bootstrapAdmin.must_setup || !bootstrapAdmin.password_changed || !bootstrapAdmin.recovery_question || !bootstrapAdmin.recovery_phrase_hash)
   ) {
     db.current_user_id = bootstrapAdmin.id
     saveDb(db)
@@ -320,15 +324,30 @@ function assertStrongPassword(password: string, message: string) {
   if (!PASSWORD_REGEX.test(password)) throw new Error(message)
 }
 
-function normalizeRecoveryPhrase(value: string) {
+function normalizeRecoveryQuestion(value: string) {
   return value.trim().replace(/\s+/g, ' ')
 }
 
-function assertStrongRecoveryPhrase(phrase: string) {
-  const normalized = normalizeRecoveryPhrase(phrase)
+function normalizeRecoveryAnswer(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function normalizeLegacyRecoveryPhrase(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function assertRecoveryQuestion(question: string) {
+  const normalized = normalizeRecoveryQuestion(question)
+  if (normalized.length < 6 || normalized.length > 120) {
+    throw new Error('La domanda di recupero deve contenere tra 6 e 120 caratteri.')
+  }
+}
+
+function assertRecoveryAnswer(answer: string) {
+  const normalized = normalizeRecoveryAnswer(answer)
   const wordCount = normalized.split(' ').filter(Boolean).length
-  if (normalized.length < 16 || wordCount < 3) {
-    throw new Error('La frase di recupero deve contenere almeno 3 parole e 16 caratteri.')
+  if (normalized.length < 2 || normalized.length > 80 || wordCount > 4) {
+    throw new Error('La risposta di recupero deve contenere da 1 a 4 parole.')
   }
 }
 
@@ -389,10 +408,12 @@ export async function setupValidator(args?: FnArgs) {
 
   const username = requiredString(data, 'username', 80).toLowerCase()
   const password = requiredString(data, 'password', 256)
-  const recoveryPhrase = requiredString(data, 'recovery_phrase', 500)
+  const recoveryQuestion = requiredString(data, 'recovery_question', 120)
+  const recoveryAnswer = requiredString(data, 'recovery_answer', 80)
   if (username.length < 3) throw new Error('Lo username deve contenere almeno 3 caratteri.')
   assertStrongPassword(password, 'La password deve contenere almeno 8 caratteri, una maiuscola, un numero e un simbolo.')
-  assertStrongRecoveryPhrase(recoveryPhrase)
+  assertRecoveryQuestion(recoveryQuestion)
+  assertRecoveryAnswer(recoveryAnswer)
 
   if (db.members.some((member) => member.id !== user.id && member.username.toLowerCase() === username)) {
     throw new Error('Questo username è già in uso.')
@@ -400,7 +421,8 @@ export async function setupValidator(args?: FnArgs) {
 
   user.username = username
   user.password_hash = await digestPassword(password)
-  user.recovery_phrase_hash = await digestPassword(normalizeRecoveryPhrase(recoveryPhrase))
+  user.recovery_question = normalizeRecoveryQuestion(recoveryQuestion)
+  user.recovery_phrase_hash = await digestPassword(normalizeRecoveryAnswer(recoveryAnswer))
   user.password_changed = true
   user.must_setup = false
   saveDb(db)
@@ -436,16 +458,30 @@ export async function changeAdminRecoveryPhraseFn(args?: FnArgs) {
   const db = await loadDb()
   const admin = assertReadyAdmin(db)
   const currentPassword = requiredString(data, 'current_password', 256)
-  const recoveryPhrase = requiredString(data, 'recovery_phrase', 500)
+  const recoveryQuestion = requiredString(data, 'recovery_question', 120)
+  const recoveryAnswer = requiredString(data, 'recovery_answer', 80)
 
   if (!(await verifyPassword(currentPassword, admin.password_hash))) {
     throw new Error('La password attuale non e corretta')
   }
 
-  assertStrongRecoveryPhrase(recoveryPhrase)
-  admin.recovery_phrase_hash = await digestPassword(normalizeRecoveryPhrase(recoveryPhrase))
+  assertRecoveryQuestion(recoveryQuestion)
+  assertRecoveryAnswer(recoveryAnswer)
+  admin.recovery_question = normalizeRecoveryQuestion(recoveryQuestion)
+  admin.recovery_phrase_hash = await digestPassword(normalizeRecoveryAnswer(recoveryAnswer))
   saveDb(db)
   return { success: true }
+}
+
+export async function getRecoveryQuestionFn(args?: FnArgs) {
+  const data = getData(args)
+  assertRecord(data)
+  const db = await loadDb()
+  const username = requiredString(data, 'username', 80).toLowerCase()
+  const member = db.members.find((candidate) => candidate.username.toLowerCase() === username)
+  return {
+    question: member?.recovery_phrase_hash ? member.recovery_question || DEFAULT_RECOVERY_QUESTION : null,
+  }
 }
 
 export async function recoverPasswordFn(args?: FnArgs) {
@@ -453,14 +489,24 @@ export async function recoverPasswordFn(args?: FnArgs) {
   assertRecord(data)
   const db = await loadDb()
   const username = requiredString(data, 'username', 80).toLowerCase()
-  const recoveryPhrase = requiredString(data, 'recovery_phrase', 500)
+  const recoveryAnswer = requiredString(data, 'recovery_answer', 500)
   const newPassword = requiredString(data, 'new_password', 256)
   const member = db.members.find((candidate) => candidate.username.toLowerCase() === username)
 
   assertStrongPassword(newPassword, 'La nuova password deve contenere almeno 8 caratteri, una maiuscola, un numero e un simbolo.')
+  if (member?.recovery_question) {
+    assertRecoveryAnswer(recoveryAnswer)
+  }
 
-  if (!member || !member.recovery_phrase_hash || !(await verifyPassword(normalizeRecoveryPhrase(recoveryPhrase), member.recovery_phrase_hash))) {
-    throw new Error('Username o frase di recupero non validi.')
+  if (
+    !member ||
+    !member.recovery_phrase_hash ||
+    !(
+      (await verifyPassword(normalizeRecoveryAnswer(recoveryAnswer), member.recovery_phrase_hash)) ||
+      (await verifyPassword(normalizeLegacyRecoveryPhrase(recoveryAnswer), member.recovery_phrase_hash))
+    )
+  ) {
+    throw new Error('Username o risposta di recupero non validi.')
   }
 
   if (await verifyPassword(newPassword, member.password_hash)) {
@@ -537,6 +583,7 @@ export async function createMemberFn(args?: FnArgs) {
     qr_token: randomToken(),
     username,
     password_hash: await digestPassword(temporaryPassword),
+    recovery_question: null,
     recovery_phrase_hash: null,
     joined_at: joinedAt.toISOString(),
     expiry_date: expiryDate.toISOString(),
@@ -780,8 +827,9 @@ export async function exportBackupFn() {
     member_number: member.member_number,
     qr_token: member.qr_token,
     username: member.username,
-      password: member.password_hash,
-      recovery_phrase_hash: member.recovery_phrase_hash,
+    password: member.password_hash,
+    recovery_question: member.recovery_question,
+    recovery_phrase_hash: member.recovery_phrase_hash,
     joined_at: member.joined_at,
     expiry_date: member.expiry_date,
     password_changed: member.password_changed,
@@ -795,7 +843,7 @@ export async function exportBackupFn() {
     application: 'gestore-pub',
     version: 1,
     exported_at: exportedAt,
-    notes: 'Backup completo: contiene hash password, token QR, soci, ruoli e storico presenze. Conservare in modo privato.',
+    notes: 'Backup completo: contiene hash password, hash risposta recupero, domanda recupero, token QR, soci, ruoli e storico presenze. Conservare in modo privato.',
     data: {
       members,
       attendances: db.attendances,
@@ -807,7 +855,7 @@ export async function exportBackupFn() {
     backup,
     csv: {
       members: toCsv(
-        ['id', 'role', 'first_name', 'last_name', 'member_number', 'username', 'joined_at', 'expiry_date', 'password_changed', 'must_setup', 'qr_token', 'recovery_phrase_set'],
+        ['id', 'role', 'first_name', 'last_name', 'member_number', 'username', 'recovery_question', 'joined_at', 'expiry_date', 'password_changed', 'must_setup', 'qr_token', 'recovery_answer_set'],
         members.map((member) => [
           member.id,
           member.role.role,
@@ -815,6 +863,7 @@ export async function exportBackupFn() {
           member.last_name,
           member.member_number ?? '',
           member.username,
+          member.recovery_question ?? '',
           member.joined_at,
           member.expiry_date ?? '',
           member.password_changed,
@@ -873,6 +922,7 @@ export async function restoreBackupFn(args?: FnArgs) {
       qr_token: nullableString(member, 'qr_token', 120),
       username: requiredString(member, 'username', 80).toLowerCase(),
       password_hash: requiredString(member, 'password', 500),
+      recovery_question: nullableString(member, 'recovery_question', 120),
       recovery_phrase_hash: nullableString(member, 'recovery_phrase_hash', 500),
       joined_at: requiredString(member, 'joined_at', 80),
       expiry_date: nullableString(member, 'expiry_date', 80),
