@@ -12,9 +12,14 @@ use tauri::{AppHandle, Manager};
 const DESKTOP_DB_FILENAME: &str = "desktop-db.json";
 const DESKTOP_DB_TMP_FILENAME: &str = "desktop-db.json.tmp";
 const MAX_DESKTOP_DB_BYTES: usize = 50 * 1024 * 1024;
+const MAX_EXPORT_BYTES: usize = 100 * 1024 * 1024;
 
 #[tauri::command]
 fn save_export_file(filename: String, bytes: Vec<u8>) -> Result<Vec<String>, String> {
+    if bytes.len() > MAX_EXPORT_BYTES {
+        return Err("File export troppo grande.".to_string());
+    }
+
     let export_dir = downloads_dir().ok_or_else(|| "Impossibile trovare la cartella Download.".to_string())?;
     fs::create_dir_all(&export_dir)
         .map_err(|error| format!("Impossibile creare la cartella Download: {error}"))?;
@@ -30,29 +35,40 @@ fn save_export_file(filename: String, bytes: Vec<u8>) -> Result<Vec<String>, Str
 #[tauri::command]
 fn open_export_directory(path: String) -> Result<(), String> {
     let export_dir = downloads_dir().ok_or_else(|| "Impossibile trovare la cartella Download.".to_string())?;
-    let target = PathBuf::from(path);
-    let directory = if target.is_file() {
-        target
+
+    if path.trim().is_empty() {
+        return Err("Percorso non valido.".to_string());
+    }
+
+    let export_dir_canonical = export_dir
+        .canonicalize()
+        .map_err(|error| format!("Impossibile validare la cartella Download: {error}"))?;
+    let requested_path = PathBuf::from(path);
+    let target_path = if requested_path.is_absolute() {
+        requested_path
+    } else {
+        export_dir_canonical.join(requested_path)
+    };
+
+    let target_canonical = target_path
+        .canonicalize()
+        .map_err(|_| "Percorso non valido o inesistente.".to_string())?;
+
+    if !target_canonical.starts_with(&export_dir_canonical) {
+        return Err("Posso aprire solo la cartella degli export dell'app.".to_string());
+    }
+
+    let directory = if target_canonical.is_file() {
+        target_canonical
             .parent()
             .map(Path::to_path_buf)
             .ok_or_else(|| "Percorso del file non valido.".to_string())?
     } else {
-        target
+        target_canonical
     };
 
     if !directory.exists() {
         return Err("La cartella non esiste piu.".to_string());
-    }
-
-    let export_dir = export_dir
-        .canonicalize()
-        .map_err(|error| format!("Impossibile validare la cartella Download: {error}"))?;
-    let directory = directory
-        .canonicalize()
-        .map_err(|error| format!("Impossibile validare la cartella export: {error}"))?;
-
-    if !directory.starts_with(&export_dir) {
-        return Err("Posso aprire solo la cartella degli export dell'app.".to_string());
     }
 
     open_directory(&directory)
@@ -61,6 +77,15 @@ fn open_export_directory(path: String) -> Result<(), String> {
 #[tauri::command]
 fn read_desktop_db(app: AppHandle) -> Result<Option<String>, String> {
     let db_path = desktop_db_path(&app)?;
+
+    match fs::metadata(&db_path) {
+        Ok(metadata) if metadata.len() > MAX_DESKTOP_DB_BYTES as u64 => {
+            return Err("Database locale troppo grande.".to_string());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("Impossibile leggere il database locale: {error}")),
+    }
 
     match fs::read_to_string(&db_path) {
         Ok(contents) => Ok(Some(contents)),

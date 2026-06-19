@@ -8,7 +8,5 @@
   <string>Copyright 2024 Francesco Dell'Orto</string>
   <key>NSCameraUsageDescription</key>
   <string>Accesso alla fotocamera per scanner QR code</string>
-  <key>NSMicrophoneUsageDescription</key>
-  <string>Accesso alla fotocamera per scanner QR code</string>
 </dict>
 </plist>
