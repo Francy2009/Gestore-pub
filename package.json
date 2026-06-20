@@ -15,6 +15,7 @@
     "build:tauri": "vite build --mode tauri && node scripts/fix-tauri-assets.mjs",
     "preview": "vite preview",
     "test": "vitest run",
+    "db:generate": "prisma generate",
     "db:seed": "jiti prisma/seed.ts",
     "db:reset-admin": "jiti prisma/reset-admin-password.ts"
   },
