@@ -7,6 +7,13 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.0.20] - 2026-06-20
+
+### Corretto
+- Avviso aggiornamenti reso piu affidabile anche quando la globale Tauri non e disponibile nel frontend.
+- Controllo aggiornamenti legato alla versione installata e ridotto a intervalli piu brevi, evitando che un controllo precedente blocchi l'avviso per troppe ore.
+- Aggiunto test di regressione per riconoscere release piu nuove con tag di test come `v1.0.20-test`.
+
 ## [1.0.19] - 2026-06-20
 
 ### Aggiunto
