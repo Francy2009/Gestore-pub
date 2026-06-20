@@ -7,6 +7,12 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.0.21] - 2026-06-20
+
+### Corretto
+- Controllo aggiornamenti eseguito a ogni avvio senza blocco temporale locale.
+- Richiesta GitHub Releases forzata senza cache per evitare risultati obsoleti nel runtime desktop.
+
 ## [1.0.20] - 2026-06-20
 
 ### Corretto

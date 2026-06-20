@@ -4,7 +4,6 @@ import { checkForAvailableUpdate, getCurrentAppVersion } from '../lib/update-che
 import type { AppUpdateInfo } from '../lib/update-check'
 
 const DISMISSED_VERSION_KEY = 'gestore-pub-update-dismissed-version'
-const CHECK_INTERVAL_MS = 60 * 60 * 1000
 const FIRST_CHECK_DELAY_MS = 5000
 
 export default function UpdateNotice() {
@@ -67,12 +66,7 @@ export default function UpdateNotice() {
 
   async function checkUpdate() {
     try {
-      const lastCheckKey = `gestore-pub-update-last-check:${getCurrentAppVersion()}`
-      const lastCheck = Number(localStorage.getItem(lastCheckKey) ?? '0')
-      if (Number.isFinite(lastCheck) && Date.now() - lastCheck < CHECK_INTERVAL_MS) return
-
       const availableUpdate = await checkForAvailableUpdate()
-      localStorage.setItem(lastCheckKey, String(Date.now()))
       if (!availableUpdate) return
       if (localStorage.getItem(DISMISSED_VERSION_KEY) === availableUpdate.tagName) return
 

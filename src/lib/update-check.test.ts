@@ -24,6 +24,9 @@ describe('update check', () => {
       version: '1.0.20-test',
       tagName: 'v1.0.20-test',
     })
+    expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      cache: 'no-store',
+    }))
   })
 
   it('ignores the current version', async () => {

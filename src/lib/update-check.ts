@@ -37,8 +37,10 @@ export function isTauriRuntime() {
 
 export async function checkForAvailableUpdate(): Promise<AppUpdateInfo | null> {
   const response = await fetch(GITHUB_LATEST_RELEASE_API, {
+    cache: 'no-store',
     headers: {
       Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
     },
   })
 
