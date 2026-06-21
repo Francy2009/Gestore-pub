@@ -7,6 +7,17 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.0.26] - 2026-06-21
+
+### Corretto
+- Risolto problema critico: i dati locali venivano cancellati durante gli aggiornamenti silenziosi dell'app su Windows e Linux.
+  - NSIS: skip della pulizia dati quando l'uninstaller è in esecuzione silenziosa (`/S` o `/UPDATE`).
+  - .deb postrm: skip della pulizia su `upgrade` e `failed-upgrade`.
+
+### Modificato
+- Rimossa la modalità chiaro/scuro (dark/light theme): eliminati ThemeToggle, CSS dark e script di inizializzazione tema.
+- Aggiunto disclaimer esplicito nel README oltre alla licenza MIT.
+
 ## [1.0.25] - 2026-06-20
 
 ### Corretto
