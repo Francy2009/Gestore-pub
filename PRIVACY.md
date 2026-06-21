@@ -129,7 +129,7 @@ Revoca:        Immediata su logout, cambio password, reset admin, scadenza
 | API CRUD Soci/Presenze | **Solo server locale** | Dati anagrafici/presenze | Su azione admin |
 | Export/Backup | **Solo server locale** → **File system client** | Backup standard senza hash password/recupero | Su azione admin |
 | Ripristino Backup | **File system client** → **Solo server locale** | Backup JSON | Su azione admin |
-| Controllo aggiornamenti | **Nessuno** (disabilitato) | - | Mai |
+| Controllo aggiornamenti | **api.github.com** (GitHub Releases) | Solo tag versione più recente, nessun dato utente inviato | All'apertura dell'app e ogni ora |
 | Analytics/Telemetria | **Nessuno** | - | Mai |
 | Font/CDN esterni | **Nessuno** (self-hosted) | - | Mai |
 

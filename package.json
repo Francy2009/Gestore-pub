@@ -1,6 +1,6 @@
 {
   "name": "the-club",
-  "version": "1.0.35",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "imports": {

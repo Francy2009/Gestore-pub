@@ -21,6 +21,8 @@ todos.json
 *.sqlite
 *.sqlite-*
 prisma/dev.db
+desktop-db.json
+desktop-db.json.tmp
 
 # Tauri/Rust build output
 src-tauri/target/

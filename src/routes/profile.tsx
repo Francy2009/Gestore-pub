@@ -103,7 +103,6 @@ function Profile() {
   if (!user.expiry_date) return null
 
   const expiryDate = new Date(user.expiry_date)
-  const joinedDate = new Date(user.joined_at)
   const today = new Date()
   const diffTime = expiryDate.getTime() - today.getTime()
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
@@ -162,12 +161,12 @@ function Profile() {
               {/* Card Footer */}
               <div className="flex justify-between items-end border-t border-white/10 pt-3">
                 <div className="flex flex-col">
-                  <span className="text-[9px] text-white/60 uppercase">Iscritto il</span>
-                  <span className="text-xs font-semibold">{joinedDate.toLocaleDateString('it-IT')}</span>
+                  <span className="text-[9px] text-white/60 uppercase">Tessera</span>
+                  <span className="text-xs font-semibold">QR permanente</span>
                 </div>
                 <div className="flex flex-col text-right">
-                  <span className="text-[9px] text-white/60 uppercase">Scadenza</span>
-                  <span className="text-xs font-semibold">{expiryDate.toLocaleDateString('it-IT')}</span>
+                  <span className="text-[9px] text-white/60 uppercase">Iscrizione</span>
+                  <span className="text-xs font-semibold">{statusText}</span>
                 </div>
               </div>
             </div>

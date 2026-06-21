@@ -137,11 +137,6 @@ function CreateMember() {
       doc.text(`${createdMember.first_name.toUpperCase()} ${createdMember.last_name.toUpperCase()}`, 8, 28)
       doc.setTextColor(239, 68, 68)
       doc.text(`N. ${createdMember.member_number}`, 8, 34)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(4.8)
-      doc.setTextColor(65, 97, 102)
-      doc.text(`Valida dal ${new Date(createdMember.joined_at).toLocaleDateString('it-IT')}`, 8, 39)
-      doc.text(`Scade il ${new Date(createdMember.expiry_date).toLocaleDateString('it-IT')}`, 8, 42.5)
 
       // 4. Add QR Code Image with a clean white quiet zone for reliable scanning.
       doc.setFillColor(255, 255, 255)
@@ -216,9 +211,6 @@ function CreateMember() {
                   </span>
                   <span className="text-[11px] font-mono mt-1 text-emerald-200 font-semibold tracking-wider">
                     N. TESSERA: {createdMember.member_number}
-                  </span>
-                  <span className="mt-2 text-[10px] font-semibold text-white/75">
-                    Valida dal {new Date(createdMember.joined_at).toLocaleDateString('it-IT')} al {new Date(createdMember.expiry_date).toLocaleDateString('it-IT')}
                   </span>
                 </div>
 
