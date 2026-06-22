@@ -37,7 +37,7 @@ Quando esce una nuova versione, l'app ti avvisa automaticamente all'apertura con
 Per aggiornare:
 
 1. Scarica il nuovo installer dalla pagina GitHub Releases
-2. Installalo sopra la versione precedente — **i tuoi dati vengono conservati automaticamente**
+2. Installalo sopra la versione precedente.
 3. Riapri l'app
 
 Non c'è bisogno di disinstallare prima: l'installer sostituisce la vecchia versione mantenendo i dati intatti.
