@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="../public/favicon.svg" />
 </head>
 <body>
   <!-- Animated background -->
@@ -48,7 +49,7 @@
         niente cloud, niente abbonamenti, niente account da creare.
       </p>
       <div class="hero-actions">
-        <a href="https://github.com/Francy2009/the-club/releases" target="_blank" rel="noopener" class="btn btn-primary">
+        <a href="https://github.com/Francy2009/the-club/releases" target="_blank" rel="noopener" class="btn btn-primary btn-glow">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Scarica
         </a>
@@ -189,10 +190,15 @@
 
   <!-- CTA -->
   <section class="cta">
+    <div class="cta-glow"></div>
     <div class="cta-inner reveal">
-      <h2 class="cta-title">Provala</h2>
+      <div class="cta-badge">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Open source · MIT
+      </div>
+      <h2 class="cta-title">Pronta per il tuo club?</h2>
       <p class="cta-subtitle">Scarica, installa, configura. Pronta in due minuti.</p>
-      <a href="https://github.com/Francy2009/the-club/releases" target="_blank" rel="noopener" class="btn btn-primary btn-lg">
+      <a href="https://github.com/Francy2009/the-club/releases" target="_blank" rel="noopener" class="btn btn-primary btn-glow btn-lg">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Vai ai download
       </a>
@@ -212,6 +218,13 @@
       <p class="footer-disclaimer">
         Il software è fornito "così com'è", senza garanzia di alcun tipo.
       </p>
+      <div class="footer-links">
+        <a href="https://github.com/Francy2009/the-club/releases" target="_blank" rel="noopener">Download</a>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/Francy2009/the-club/blob/main/README.md" target="_blank" rel="noopener">Documentazione</a>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/Francy2009/the-club/blob/main/SECURITY.md" target="_blank" rel="noopener">Sicurezza</a>
+      </div>
     </div>
   </footer>
 
@@ -229,6 +242,15 @@
       { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
     )
     document.querySelectorAll('.reveal').forEach((el) => observer.observe(el))
+
+    // Spotlight effect on feature cards
+    document.querySelectorAll('.feature-card').forEach((card) => {
+      card.addEventListener('mousemove', (e) => {
+        const rect = card.getBoundingClientRect()
+        card.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`)
+        card.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`)
+      })
+    })
   </script>
 </body>
 </html>

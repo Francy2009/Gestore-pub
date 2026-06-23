@@ -240,6 +240,16 @@ a { color: inherit; text-decoration: none; }
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-dim);
+  padding: 8px 14px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: all 0.2s;
+}
+
+.hero-platform:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
 }
 
 /* === Buttons === */
@@ -260,11 +270,34 @@ a { color: inherit; text-decoration: none; }
   background: var(--gradient-1);
   color: white;
   box-shadow: 0 4px 24px rgba(244, 63, 94, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.5s;
+}
+
+.btn-primary:hover::before {
+  transform: translateX(100%);
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 32px rgba(244, 63, 94, 0.35);
+}
+
+.btn-glow {
+  box-shadow: 0 0 28px rgba(244, 63, 94, 0.35), 0 4px 24px rgba(244, 63, 94, 0.25);
+}
+
+.btn-glow:hover {
+  box-shadow: 0 0 40px rgba(244, 63, 94, 0.5), 0 8px 32px rgba(244, 63, 94, 0.35);
 }
 
 .btn-ghost {
@@ -322,6 +355,22 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border);
   background: var(--surface);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(400px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(244, 63, 94, 0.08), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.feature-card:hover::before {
+  opacity: 1;
 }
 
 .feature-card:hover {
@@ -337,6 +386,11 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   justify-content: center;
   margin-bottom: 20px;
+  transition: transform 0.3s;
+}
+
+.feature-card:hover .feature-icon {
+  transform: scale(1.08) rotate(-3deg);
 }
 
 .feature-icon-rose { background: rgba(244, 63, 94, 0.12); color: var(--rose); }
@@ -372,11 +426,27 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border);
   background: var(--surface);
   transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.why-item::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 2px;
+  background: var(--gradient-1);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s;
 }
 
 .why-item:hover {
   border-color: var(--border-hover);
   transform: translateY(-4px);
+}
+
+.why-item:hover::after {
+  transform: scaleX(1);
 }
 
 .why-number {
@@ -465,11 +535,46 @@ a { color: inherit; text-decoration: none; }
 .cta {
   padding: 120px 24px;
   text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-glow {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 600px; height: 600px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.18), transparent 60%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .cta-inner {
+  position: relative;
+  z-index: 1;
   max-width: 560px;
   margin: 0 auto;
+  padding: 48px 36px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: rgba(10, 10, 15, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.cta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  margin-bottom: 24px;
 }
 
 .cta-title {
@@ -529,7 +634,25 @@ a { color: inherit; text-decoration: none; }
 .footer-disclaimer {
   font-size: 0.8rem;
   color: var(--text-dim);
+  margin-bottom: 16px;
 }
+
+.footer-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
+
+.footer-links a {
+  color: var(--text-soft);
+  transition: color 0.2s;
+}
+
+.footer-links a:hover { color: var(--text); }
+
+.footer-sep { color: var(--border-hover); }
 
 /* === Reveal Animation === */
 .reveal {
