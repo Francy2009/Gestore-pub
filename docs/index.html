@@ -90,62 +90,42 @@
       </div>
     </div>
 
-    <!-- Hero mockup -->
-    <div class="hero-mockup reveal" style="--delay: 200ms">
-      <div class="mockup-window" data-tilt>
-        <div class="mockup-header">
-          <div class="mockup-dots">
+    <!-- Hero visual: QR card + scanner -->
+    <div class="hero-visual reveal" style="--delay: 200ms">
+      <div class="qr-card" data-tilt>
+        <div class="qr-card-glow"></div>
+        <div class="qr-card-header">
+          <div class="qr-card-logo">
             <span></span>
-            <span></span>
-            <span></span>
+            The Club
           </div>
-          <div class="mockup-title">The Club</div>
+          <div class="qr-card-chip"></div>
         </div>
-        <div class="mockup-body">
-          <div class="mockup-sidebar">
-            <div class="mockup-nav-item active"></div>
-            <div class="mockup-nav-item"></div>
-            <div class="mockup-nav-item"></div>
-            <div class="mockup-nav-item"></div>
-          </div>
-          <div class="mockup-main">
-            <div class="mockup-search"></div>
-            <div class="mockup-members">
-              <div class="mockup-row">
-                <div class="mockup-avatar">MR</div>
-                <div class="mockup-lines">
-                  <div class="mockup-line mockup-line-lg"></div>
-                  <div class="mockup-line"></div>
-                </div>
-                <div class="mockup-status active">Attivo</div>
-              </div>
-              <div class="mockup-row">
-                <div class="mockup-avatar">LS</div>
-                <div class="mockup-lines">
-                  <div class="mockup-line mockup-line-lg"></div>
-                  <div class="mockup-line"></div>
-                </div>
-                <div class="mockup-status exp">In scadenza</div>
-              </div>
-              <div class="mockup-row">
-                <div class="mockup-avatar">AB</div>
-                <div class="mockup-lines">
-                  <div class="mockup-line mockup-line-lg"></div>
-                  <div class="mockup-line"></div>
-                </div>
-                <div class="mockup-status active">Attivo</div>
-              </div>
+        <div class="qr-card-body">
+          <div class="qr-card-name">Mario Rossi</div>
+          <div class="qr-card-number">Socio n. 042</div>
+          <div class="qr-code">
+            <div class="qr-pattern">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
             </div>
+            <div class="qr-corner qr-corner-tl"></div>
+            <div class="qr-corner qr-corner-tr"></div>
+            <div class="qr-corner qr-corner-bl"></div>
           </div>
         </div>
-        <div class="mockup-float mockup-float-1">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/><path d="M3 7l9-4 9 4"/></svg>
-          <span>+1 ingresso</span>
+        <div class="qr-card-footer">
+          <span>Tessera permanente</span>
+          <span class="qr-card-status">Attivo</span>
         </div>
-        <div class="mockup-float mockup-float-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span>Presenze: 47</span>
-        </div>
+      </div>
+      <div class="scan-beam"></div>
+      <div class="scan-badge">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/><path d="M3 7l9-4 9 4"/></svg>
+        <span>Presenza registrata</span>
       </div>
     </div>
   </header>
@@ -435,12 +415,12 @@
       })
     })
 
-    // Parallax on scroll for mockup
-    const mockup = document.querySelector('.hero-mockup')
-    if (mockup) {
+    // Parallax on scroll for visual
+    const visual = document.querySelector('.hero-visual')
+    if (visual) {
       window.addEventListener('scroll', () => {
         const scrolled = window.scrollY
-        mockup.style.transform = `translateY(${scrolled * 0.08}px)`
+        visual.style.transform = `translateY(${scrolled * 0.08}px)`
       })
     }
   </script>
