@@ -1,7 +1,7 @@
 # Privacy - The Club
 
-**Ultimo aggiornamento**: 21 giugno 2026
-**Versione**: 3.0
+**Ultimo aggiornamento**: 25 giugno 2026
+**Versione**: 3.1
 **Applicabile a**: Tutte le versioni ≥ 1.0.0
 
 ---
@@ -34,7 +34,7 @@ L'app gestisce i dati strettamente necessari al funzionamento del club:
 | **Anagrafica soci** | Nome, Cognome, Numero tessera (opzionale), Username univoco |
 | **Date** | Data iscrizione, Data scadenza tessera (opzionale) |
 | **Presenze** | Timestamp check-in, Giorno check-in, Flag socio eliminato |
-| **Autenticazione** | Username, hash password (PBKDF2-SHA512), hash risposta recupero (PBKDF2-SHA512), domanda di recupero (in chiaro solo nel file desktop; hashata in modalità server) |
+| **Autenticazione** | Username, hash password (PBKDF2-SHA512), hash risposta recupero (PBKDF2-SHA512), hash domanda di recupero (PBKDF2-SHA512) |
 | **Token QR** | Token base64url 32 byte, univoco per tessera |
 | **Export/Backup** | JSON con anagrafica, presenze, ruoli, dati recupero non segreti e token QR; CSV senza hash |
 
@@ -118,7 +118,7 @@ Formato:       pbkdf2_sha512$iterations$salt$hash (hex)
 - Confronto in **constant-time** (`crypto.timingSafeEqual`)
 - Supporto legacy per migrazione da vecchi hash (1.000 iterazioni)
 
-> **Nota modalità desktop**: nella versione desktop il file `desktop-db.json` salva la **domanda di recupero in chiaro** (serve per mostrarla all'amministratore durante il recupero password), mentre la **risposta di recupero è hashata**. Nella modalità server/sviluppo (Prisma/SQLite) anche la domanda di recupero viene hashata e non viene mostrata in chiaro.
+> **Nota modalità desktop**: a partire dalla versione 1.1.1, nella versione desktop il file `desktop-db.json` salva anche la **domanda di recupero come hash** (PBKDF2-SHA512), esattamente come la modalità server. Le versioni precedenti potevano avere la domanda in chiaro: all'aggiornamento viene eseguita una migrazione automatica che la converte in hash. La risposta di recupero è sempre hashata in entrambe le modalità.
 
 ### 5.2 Gestione sessioni
 
@@ -182,11 +182,12 @@ Il software **non** implementa cancellazione automatica o retention policy: la g
 
 | Versione | Data | Cambiamenti |
 |----------|------|-------------|
+| 3.1 | 25/06/2026 | Recovery question hashata anche in modalità desktop; audit log; rate limit persistente |
 | 3.0 | 21/06/2026 | Riscritta: solo comportamento tecnico, nessun consiglio legale |
 | 2.0 | 14/06/2026 | Ristrutturazione completa |
 | 1.0 | Iniziale | Versione base |
 
 ---
 
-**Documento tecnico per The Club v1.0.0+.**
+**Documento tecnico per The Club v1.0.0+ (aggiornato per v1.1.1).**
 *Questo documento non sostituisce l'informativa privacy dell'amministratore del club, che è responsabile del trattamento dei dati dei propri soci.*

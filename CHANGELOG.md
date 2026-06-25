@@ -7,6 +7,16 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-25
+
+### Sicurezza
+- **Recovery question hashata anche in modalità desktop**: la domanda di recupero dell'amministratore viene ora hashata con PBKDF2-SHA512 anche nel file locale `desktop-db.json`, allineandosi al comportamento della modalità server. Le domande salvate in chiaro dalle versioni precedenti vengono migrate automaticamente al primo avvio.
+- **Rate limiting persistente in modalità desktop**: i tentativi falliti di login e recupero password sono ora salvati nel database locale e sopravvivono ai riavvii dell'app, come avviene già nella modalità server.
+- **Audit log delle azioni amministrative**: aggiunta una traccia interna per azioni sensibili (login/logout, cambio password, creazione/eliminazione soci, rinnovi, registrazione presenze, export/restore, eliminazione presenze). In modalità desktop i log restano nel file locale; in modalità server vengono scritti nella tabella `AuditLog`.
+- **Capability Tauri ridotte al minimo**: rimossi i permessi `core:default` ridondanti e i permessi non utilizzati, lasciando solo quelli strettamente necessari (`core:app:default`, `core:window:default`, `core:webview:default`, `core:path:default`).
+- **Disabilitata l'API privata di macOS**: `macOSPrivateApi` è ora `false` e la feature `macos-private-api` è stata rimossa da `Cargo.toml`, dato che l'app non ne fa uso.
+- **Audit delle dipendenze Rust**: aggiunto `cargo audit` ai workflow CI e release.
+
 ## [1.1.0] - 2026-06-25
 
 ### Modificato
@@ -69,7 +79,8 @@ Prima release pubblica.
 - TypeScript strict mode
 - Tailwind CSS
 
-[Unreleased]: https://github.com/Francy2009/The-Club/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Francy2009/The-Club/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/Francy2009/The-Club/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Francy2009/The-Club/releases/tag/v1.1.0
 [1.0.4]: https://github.com/Francy2009/The-Club/releases/tag/v1.0.4
 [1.0.3]: https://github.com/Francy2009/The-Club/releases/tag/v1.0.3
