@@ -3,22 +3,9 @@ import { RotateCcw, ShieldAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { resetLocalDatabaseFn } from '../lib/api'
 import { resetExportDirectory } from '../lib/export-preferences'
+import { isTauriWebview } from '../lib/tauri-bridge'
 
 const RESET_CONFIRMATION_REQUIRED = "RESETTA L'APP"
-
-function hasTauriRuntime() {
-  if (typeof window === 'undefined') return false
-
-  return Boolean(
-    (window as typeof window & {
-      __TAURI__?: {
-        core?: {
-          invoke?: unknown
-        }
-      }
-    }).__TAURI__?.core?.invoke,
-  )
-}
 
 export default function LocalDataResetPanel() {
   const router = useRouter()
@@ -31,7 +18,7 @@ export default function LocalDataResetPanel() {
   const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
-    if (hasTauriRuntime()) {
+    if (isTauriWebview()) {
       setIsAvailable(true)
     }
   }, [])

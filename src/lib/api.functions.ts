@@ -853,6 +853,15 @@ export const loginFn = createServerFn({ method: 'POST' })
 
     await clearLoginFailures(searchUsername);
 
+    // Upgrade trasparente: se l'hash salvato è un formato legacy (salt:hash
+    // PBKDF2 a 1000 iterazioni), lo ri-hasho con PBKDF2-SHA512 (310k iterazioni).
+    if (!member.password.startsWith('pbkdf2_sha512$')) {
+      await prisma.member.update({
+        where: { id: member.id },
+        data: { password: hashPassword(data.password) },
+      });
+    }
+
     await destroySession();
     await setSession(member.id);
 

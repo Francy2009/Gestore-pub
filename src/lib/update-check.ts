@@ -1,6 +1,13 @@
+import { isTauriWebview } from './tauri-bridge'
+
 declare const __APP_VERSION__: string
 
 const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/Francy2009/The-Club/releases/latest'
+// Pagina canonica delle release. Usata come fallback sicuro se la risposta
+// dell'API restituisse un html_url inatteso (es. account GitHub compromesso):
+// non apriamo mai nel browser di sistema un URL esterno non affidabile.
+const GITHUB_RELEASES_PAGE = 'https://github.com/Francy2009/The-Club/releases/latest'
+const GITHUB_RELEASE_URL_PREFIX = 'https://github.com/Francy2009/The-Club/'
 
 type GitHubReleaseResponse = {
   tag_name?: unknown
@@ -22,17 +29,7 @@ export function getCurrentAppVersion() {
 }
 
 export function isTauriRuntime() {
-  if (typeof window === 'undefined') return false
-
-  return Boolean(
-    (window as typeof window & {
-      __TAURI__?: {
-        core?: {
-          invoke?: unknown
-        }
-      }
-    }).__TAURI__?.core?.invoke,
-  )
+  return isTauriWebview()
 }
 
 export async function checkForAvailableUpdate(): Promise<AppUpdateInfo | null> {
@@ -47,20 +44,7 @@ export async function checkForAvailableUpdate(): Promise<AppUpdateInfo | null> {
       },
     })
   } catch (networkError) {
-    // In Tauri WebView, fetch to external URLs may fail due to CSP or network restrictions.
-    // Retry with a no-cors fallback or re-throw for the caller to handle.
-    console.warn('Update check: fetch failed, retrying with no-cors:', networkError)
-    try {
-      response = await fetch(GITHUB_LATEST_RELEASE_API, {
-        cache: 'no-store',
-        mode: 'cors',
-        headers: {
-          Accept: 'application/vnd.github+json',
-        },
-      })
-    } catch (retryError) {
-      throw new Error(`Controllo aggiornamenti non riuscito (network): ${retryError}`)
-    }
+    throw new Error(`Controllo aggiornamenti non riuscito (network): ${networkError}`)
   }
 
   if (!response.ok) {
@@ -74,10 +58,16 @@ export async function checkForAvailableUpdate(): Promise<AppUpdateInfo | null> {
   const version = normalizeVersion(release.tag_name)
   if (!isVersionNewer(version, getCurrentAppVersion())) return null
 
+  // Whitelist: apriamo solo URL sotto il repo ufficiale. Se html_url non
+  // corrisponde (risposta manipolata), usiamo la pagina release canonica.
+  const releaseUrl = release.html_url.startsWith(GITHUB_RELEASE_URL_PREFIX)
+    ? release.html_url
+    : GITHUB_RELEASES_PAGE
+
   return {
     version,
     tagName: release.tag_name,
-    releaseUrl: release.html_url,
+    releaseUrl,
     notes: typeof release.body === 'string' && release.body.trim() ? release.body.trim() : null,
   }
 }

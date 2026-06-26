@@ -7,6 +7,28 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-26
+
+### Corretto
+- **Permanenza dati desktop effettivamente attiva (corregge un bug critico introdotto in v1.0.2).** Da v1.0.2 (`withGlobalTauri: false`) l'app desktop non riusciva più a invocare i comandi Rust: `window.__TAURI__` non viene esposto in Tauri v2 con quel flag, e il progetto non usava `@tauri-apps/api`. Risultato: i dati venivano salvati in `localStorage` del webview invece che nel file `desktop-db.json`, e tutta la logica di persistenza/migrazione Rust era inerte. Ora il bridge usa `invoke` da `@tauri-apps/api/core` con rilevamento via `__TAURI_INTERNALS__`. I dati tornano a essere salvati nel file `desktop-db.json` nella cartella dati dell'app. **Migrazione automatica**: chi aveva usato la v1.1.2 desktop (dati in `localStorage`) ritrova tutto al primo avvio della 2.0.0 (migrazione `legacy-localStorage` → file).
+- **Hash password legacy ri-hashati al login.** Al primo login valido, gli hash salvati in formati legacy deboli (`local$` base64 reversibile, `sha256$` a iterazione singola, `salt:hash` PBKDF2 a 1000 iterazioni) vengono rehashati con PBKDF2-SHA512 (310.000 iterazioni) e persistiti. Valido sia per la modalità desktop che server.
+- **Scrittura atomica del DB non più distruttiva.** Se il `rename` del file temporaneo fallisce (su Windows può capitare per un antivirus che trattiene il file), l'app non cancella più il DB buono prima di ritentare: fa retry con backoff e, in caso di fallimento finale, preserva il DB esistente rimuovendo solo il temporaneo. Aggiunto anche `fsync` della directory per la durabilità su hard crash (macOS/Linux). Questo elimina il sintomo "sembra un reset" da DB perso.
+- **`loadDb` non sovrascrive più un DB incoerente.** Se il file esiste ed è leggibile ma non contiene un account amministratore, l'app non crea più un admin vuoto azzerando i dati residui: mostra un errore che invita al ripristino backup o al reset esplicito.
+- **Audit log persistito anche sui tentativi falliti.** Le voci `auth.login_failed`, `auth.recovery_failed` e `backup.exported` venivano perse (manca il salvataggio sui path di errore/export). Ora vengono persistite.
+
+### Sicurezza
+- **Single-instance lock.** Aggiunto `tauri-plugin-single-instance`: impedisce di aprire una seconda finestra dell'app. Il DB desktop è letto intero, modificato in memoria e riscritto intero: due istanze concorrenti causavano lost update (presenze/soci persi).
+- **`open_external_url` validato con parsing robusto.** Usa `url::Url::parse` (scheme `http`/`https`, sanitizzazione di metacaratteri shell) invece di un semplice controllo di prefisso. Difesa in profondità: l'URL della release GitHub è ora whitelistato su `github.com/Francy2009/The-Club/` prima di essere aperto nel browser di sistema.
+- **Enumerazione utenti via recovery question rimossa (desktop).** `getRecoveryQuestionFn` ora risponde `hasRecovery: true` costante, allineandosi al path server e non rivelando più se uno username esiste o se ha il recupero configurato.
+
+### Tecnico
+- Aggiunta dipendenza `@tauri-apps/api` (bridge `invoke`), `tauri-plugin-single-instance` e `url` (Rust).
+- `withGlobalTauri` resta `false` (hardening di v1.0.2 mantenuto): l'API globale non è esposta, si usa l'import dal pacchetto.
+- Verificato con typecheck, suite di test (12/12), build web, build Tauri (prerender), `cargo check`, `npm audit` (0 vulnerabilità).
+
+### Note
+- Major bump perché cambia in modo significativo il meccanismo di persistenza desktop (da `localStorage` a file `desktop-db.json`), con migrazione automatica dei dati delle versioni 1.1.x desktop. Nessuna modifica funzionale all'interfaccia utente.
+
 ## [1.1.2] - 2026-06-26
 
 ### Aggiornato
@@ -97,7 +119,8 @@ Prima release pubblica.
 - TypeScript strict mode
 - Tailwind CSS
 
-[Unreleased]: https://github.com/Francy2009/The-Club/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/Francy2009/The-Club/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Francy2009/The-Club/releases/tag/v2.0.0
 [1.1.2]: https://github.com/Francy2009/The-Club/releases/tag/v1.1.2
 [1.1.1]: https://github.com/Francy2009/The-Club/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Francy2009/The-Club/releases/tag/v1.1.0

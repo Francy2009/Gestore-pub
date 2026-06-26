@@ -1,3 +1,5 @@
+import { getTauriInvoke } from './tauri-bridge'
+
 type Role = 'admin' | 'user'
 
 type DesktopMember = {
@@ -61,7 +63,6 @@ const MAX_BACKUP_MEMBERS = 10000
 const MAX_BACKUP_ATTENDANCES = 250000
 
 type FnArgs = { data?: Record<string, unknown> } | undefined
-type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>
 type StoredDbSource = 'tauri-file' | 'legacy-localStorage' | 'localStorage' | 'empty'
 
 // --- In-memory rate limiting (brute force protection) ---
@@ -149,20 +150,8 @@ async function clearRateLimitFailures(identifier: string, type: RateLimitType) {
   await saveDb(db)
 }
 
-function getTauriInvoke(): TauriInvoke | null {
-  if (typeof window === 'undefined') return null
-
-  return (window as typeof window & {
-    __TAURI__?: {
-      core?: {
-        invoke?: TauriInvoke
-      }
-    }
-  }).__TAURI__?.core?.invoke ?? null
-}
-
 async function readStoredDbRaw(): Promise<{ raw: string | null; source: StoredDbSource }> {
-  const invoke = getTauriInvoke()
+  const invoke = await getTauriInvoke()
   const localRaw = localStorage.getItem(DB_KEY) ?? localStorage.getItem(LEGACY_DB_KEY)
 
   if (invoke) {
@@ -183,7 +172,7 @@ async function readStoredDbRaw(): Promise<{ raw: string | null; source: StoredDb
 
 async function persistDb(db: DesktopDb) {
   const raw = JSON.stringify(db)
-  const invoke = getTauriInvoke()
+  const invoke = await getTauriInvoke()
 
   if (invoke) {
     await invoke('write_desktop_db', { contents: raw })
@@ -200,7 +189,7 @@ async function migrateLegacyLocalDb(db: DesktopDb) {
 }
 
 export async function resetDesktopDatabase() {
-  const invoke = getTauriInvoke()
+  const invoke = await getTauriInvoke()
 
   if (invoke) {
     await invoke('reset_desktop_db')
@@ -211,7 +200,7 @@ export async function resetDesktopDatabase() {
 }
 
 export async function cleanupAppData(): Promise<string | null> {
-  const invoke = getTauriInvoke()
+  const invoke = await getTauriInvoke()
 
   if (invoke) {
     return await invoke<string>('cleanup_app_data')
@@ -224,7 +213,7 @@ export async function cleanupAppData(): Promise<string | null> {
 }
 
 export async function openExternalUrl(url: string): Promise<boolean> {
-  const invoke = getTauriInvoke()
+  const invoke = await getTauriInvoke()
 
   if (invoke) {
     try {
@@ -422,6 +411,20 @@ async function verifyPassword(password: string, storedHash: string) {
   return timingSafeEqual(await digestPassword(password, salt), storedHash)
 }
 
+/**
+ * True se l'hash è nel formato moderno (PBKDF2-SHA512 con iterazioni sane).
+ * Usato per decidere se ri-hashare al login le credenziali salvate in formati
+ * legacy deboli (local$ base64 reversibile, sha256$ a iterazione singola,
+ * salt:hash PBKDF2 a 1000 iterazioni).
+ */
+function isModernPasswordHash(hash: string): boolean {
+  if (!hash.startsWith('pbkdf2_sha512$')) return false
+  const parts = hash.split('$')
+  if (parts.length !== 4) return false
+  const iterations = Number(parts[1])
+  return Number.isInteger(iterations) && iterations >= 100000 && iterations <= 1000000
+}
+
 function parseDb(raw: string | null): DesktopDb | null {
   if (!raw) return null
   try {
@@ -485,10 +488,23 @@ async function loadDb() {
     await migrateLegacyLocalDb(db)
   }
 
-  if (!db || !db.members.some((member) => member.role === 'admin')) {
+  if (!db) {
+    // Nessun DB (primo avvio) o contenuto localStorage non valido: bootstrap
+    // legittimo, crea l'admin iniziale da configurare.
     db = await createInitialDb()
     await saveDb(db)
     return db
+  }
+
+  if (!db.members.some((member) => member.role === 'admin')) {
+    // Il DB esiste ed è leggibile ma non contiene un admin: stato incoerente
+    // (corruzione parziale, restore interrotto, manomissione). NON
+    // sovrascriviamo i dati residui creando un admin vuoto (sarebbe il sintomo
+    // "sembra un reset"): chiediamo all'utente di ripristinare o resettare.
+    throw new Error(
+      'Database locale incoerente: nessun account amministratore presente. ' +
+        'Ripristina un backup dalle impostazioni oppure usa "Reset app" per ripartire da zero.',
+    )
   }
 
   // Migrate legacy plain-text recovery questions to hashed format
@@ -666,6 +682,10 @@ export async function loginFn(args?: FnArgs) {
   if (!member || !(await verifyPassword(password, member.password_hash))) {
     const result = await recordRateLimitFailure(username, 'login')
     await auditLog(db, 'auth.login_failed', { username, locked: result.locked })
+    // Persisti la voce di audit prima di uscire: il rate-limit vive in un DB
+    // separato (già salvato da recordRateLimitFailure), ma l'audit log va
+    // persistito esplicitamente, altrimenti il tentativo fallito sparirebbe.
+    await saveDb(db)
     if (result.locked) {
       throw new Error(`Troppi tentativi non riusciti. Riprova tra ${result.retryAfterMinutes} min.`)
     }
@@ -673,6 +693,13 @@ export async function loginFn(args?: FnArgs) {
   }
 
   await clearRateLimitFailures(username, 'login')
+  // Upgrade trasparente: se l'hash salvato è un formato legacy debole, lo
+  // ri-hasho con PBKDF2-SHA512 (310k iterazioni) e persisto. Così i vecchi
+  // hash (incluso local$, base64 reversibile) vengono eliminati al primo
+  // login valido con la password nota.
+  if (!isModernPasswordHash(member.password_hash)) {
+    member.password_hash = await digestPassword(password)
+  }
   db.current_user_id = member.id
   await auditLog(db, 'auth.login_success', { username, role: member.role })
   await saveDb(db)
@@ -779,12 +806,11 @@ export async function changeAdminRecoveryPhraseFn(args?: FnArgs) {
 export async function getRecoveryQuestionFn(args?: FnArgs) {
   const data = getData(args)
   assertRecord(data)
-  const db = await loadDb()
-  const username = requiredString(data, 'username', 80).toLowerCase()
-  const member = db.members.find((candidate) => candidate.username.toLowerCase() === username)
-  // Generic response: do not reveal the question text or whether the user exists.
+  // Risposta costante (allineata al path server): non rivela se lo username
+  // esiste né se ha il recupero configurato, per evitare enumerazione utenti.
+  // La validazione reale avviene in recoverPasswordFn, che verifica la risposta.
   return {
-    hasRecovery: Boolean(member?.recovery_phrase_hash),
+    hasRecovery: true,
   }
 }
 
@@ -818,6 +844,7 @@ export async function recoverPasswordFn(args?: FnArgs) {
   ) {
     const result = await recordRateLimitFailure(username, 'recovery')
     await auditLog(db, 'auth.recovery_failed', { username, locked: result.locked })
+    await saveDb(db)
     if (result.locked) {
       throw new Error(`Troppi tentativi di recupero. Riprova tra ${result.retryAfterMinutes} min.`)
     }
@@ -1165,6 +1192,8 @@ export async function exportBackupFn() {
   assertReadyAdmin(db)
   const exportedAt = new Date().toISOString()
   await auditLog(db, 'backup.exported')
+  // Persisti la voce di audit dell'export (la funzione non salva altrove).
+  await saveDb(db)
   const members = db.members.map((member) => ({
     id: member.id,
     first_name: member.first_name,

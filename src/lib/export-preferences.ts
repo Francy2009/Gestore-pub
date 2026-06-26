@@ -1,3 +1,5 @@
+import { getTauriInvoke } from './tauri-bridge'
+
 type ExportMode = 'downloads' | 'folder'
 
 type ExportPreference = {
@@ -28,11 +30,6 @@ type DirectoryHandle = {
 declare global {
   interface Window {
     showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<DirectoryHandle>
-    __TAURI__?: {
-      core?: {
-        invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>
-      }
-    }
   }
 }
 
@@ -153,18 +150,13 @@ function sanitizeDownloadFilename(filename: string) {
   return sanitized || 'export'
 }
 
-function getTauriInvoke() {
-  if (typeof window === 'undefined') return null
-  return window.__TAURI__?.core?.invoke ?? null
-}
-
 function formatDirectoryName(path: string) {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
   return normalized.split('/').pop() || path
 }
 
 async function saveBlobWithTauri(filename: string, blob: Blob): Promise<SaveResult | null> {
-  const invoke = getTauriInvoke()
+  const invoke = await getTauriInvoke()
   if (!invoke) return null
 
   const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
@@ -284,7 +276,7 @@ export async function saveBlobToPreferredDestination(filename: string, blob: Blo
 }
 
 export async function openSavedFileLocation(result: Pick<SaveResult, 'directoryPath' | 'filePath'>) {
-  const invoke = getTauriInvoke()
+  const invoke = await getTauriInvoke()
   const targetPath = result.directoryPath || result.filePath
 
   if (!invoke || !targetPath) {

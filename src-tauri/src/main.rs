@@ -161,7 +161,12 @@ fn write_desktop_db(app: AppHandle, contents: String) -> Result<(), String> {
     write_db_atomic(&db_path, &contents)
 }
 
-/// Scrittura atomica del DB locale: scrive su file temporaneo, fa sync, poi rename.
+/// Scrittura atomica del DB locale: scrive su file temporaneo, fa sync, poi
+/// rename. Il rename ritenta poche volte con backoff (su Windows un antivirus
+/// o l'indexer possono trattenere brevemente il file destinazione). Il DB
+/// esistente non viene MAI cancellato per "forzare" il rename: se tutti i
+/// tentativi falliscono, il DB buono resta intatto e viene rimosso solo il
+/// file temporaneo (evita il sintomo "sembra un reset" da DB perso).
 fn write_db_atomic(db_path: &Path, contents: &str) -> Result<(), String> {
     let tmp_path = db_path.with_file_name(DESKTOP_DB_TMP_FILENAME);
     let mut file = OpenOptions::new()
@@ -177,16 +182,45 @@ fn write_db_atomic(db_path: &Path, contents: &str) -> Result<(), String> {
         .map_err(|error| format!("Impossibile completare il salvataggio del database locale: {error}"))?;
     drop(file);
 
-    if let Err(rename_error) = fs::rename(&tmp_path, db_path) {
-        if db_path.exists() {
-            fs::remove_file(db_path)
-                .map_err(|error| format!("Impossibile aggiornare il database locale: {error}"))?;
+    let mut last_error: Option<std::io::Error> = None;
+    let mut renamed = false;
+    for attempt in 0..5u32 {
+        match fs::rename(&tmp_path, db_path) {
+            Ok(()) => {
+                renamed = true;
+                break;
+            }
+            Err(error) => {
+                last_error = Some(error);
+                if attempt < 4 {
+                    // Backoff: 50ms, 100ms, 200ms, 400ms. Lascia al processo
+                    // che trattiene il file il tempo di rilasciarlo.
+                    std::thread::sleep(std::time::Duration::from_millis(50u64 * (1u64 << attempt)));
+                }
+            }
         }
-        fs::rename(&tmp_path, db_path)
-            .map_err(|error| format!("Impossibile aggiornare il database locale: {rename_error}; {error}"))?;
     }
 
-    Ok(())
+    if renamed {
+        // Durabilità best-effort: fsync della directory padre sovrascritore
+        // dal rename sopravviva a un hard crash (rilevante su macOS/Linux).
+        // Errori ignorati: i dati sono già nel nuovo file.
+        if let Some(parent) = db_path.parent() {
+            if let Ok(dir) = OpenOptions::new().read(true).open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+        return Ok(());
+    }
+
+    // Tutti i tentativi falliti: preserva il DB esistente, rimuovi solo il tmp.
+    let _ = fs::remove_file(&tmp_path);
+    Err(format!(
+        "Impossibile aggiornare il database locale: {}",
+        last_error
+            .map(|error| error.to_string())
+            .unwrap_or_default()
+    ))
 }
 
 #[tauri::command]
@@ -265,12 +299,16 @@ fn cleanup_app_data(app: AppHandle) -> Result<String, String> {
 /// so this command bridges that gap.
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
-    // Validate that it's an http/https URL to prevent arbitrary command execution
-    if !url.starts_with("https://") && !url.starts_with("http://") {
+    // Parsing robusto con url::Url: rifiuta scheme non http/https e qualsiasi
+    // URL con metacaratteri di controllo/spazi bianchi (che su Windows potrebbero
+    // essere interpretati da `cmd /C start`). Passiamo al browser la forma
+    // normalizzata, non la stringa grezza.
+    let parsed = url::Url::parse(url.trim()).map_err(|_| "URL non valido.".to_string())?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err("Solo URL http/https sono supportati.".to_string());
     }
 
-    open_url(&url)
+    open_url(parsed.as_str())
 }
 
 fn open_url(url: &str) -> Result<(), String> {
@@ -453,7 +491,22 @@ fn main() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Single-instance: impedisce di aprire una seconda finestra dell'app. Il DB
+    // desktop viene letto intero, modificato in memoria e riscritto intero: due
+    // istanze concorrenti causerebbero lost update (presenze/soci persi). Il
+    // plugin va registrato PRIMA di qualsiasi altro plugin. Quando si lancia una
+    // seconda istanza, viene portata in primo piano la finestra esistente.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .invoke_handler(tauri::generate_handler![
             save_export_file,
             open_export_directory,

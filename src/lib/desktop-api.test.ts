@@ -6,10 +6,26 @@ const DB_KEY = 'the-club:desktop-db'
 const LEGACY_DB_KEY = 'gestore-pub:desktop-db'
 type TestTauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>
 
+// Il bridge importa dinamicamente @tauri-apps/api/core; nei test lo mockiamo
+// con un passthrough che delega a window.__TAURI_INTERNALS__.invoke preservando
+// la firma di chiamata (così le asserzioni esistenti restano valide). In
+// produzione è @tauri-apps/api/core a fare questa delega verso il bridge IPC.
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => {
+    const internals = (window as typeof window & {
+      __TAURI_INTERNALS__?: { invoke: (...a: unknown[]) => unknown }
+    }).__TAURI_INTERNALS__
+    if (!internals || typeof internals.invoke !== 'function') {
+      throw new Error('Test setup: __TAURI_INTERNALS__.invoke non configurato')
+    }
+    return internals.invoke(...args)
+  },
+}))
+
 describe('desktop first launch bootstrap', () => {
   beforeEach(() => {
     localStorage.clear()
-    delete (window as typeof window & { __TAURI__?: unknown }).__TAURI__
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
   })
 
   it('creates only the admin profile and opens the setup flow on first launch', async () => {
@@ -46,8 +62,8 @@ describe('desktop first launch bootstrap', () => {
     })
 
     ;(window as typeof window & {
-      __TAURI__?: { core?: { invoke?: TestTauriInvoke } }
-    }).__TAURI__ = { core: { invoke: invoke as unknown as TestTauriInvoke } }
+      __TAURI_INTERNALS__?: { invoke?: TestTauriInvoke }
+    }).__TAURI_INTERNALS__ = { invoke: invoke as unknown as TestTauriInvoke }
 
     localStorage.setItem(LEGACY_DB_KEY, JSON.stringify({
       version: 1,
@@ -95,8 +111,8 @@ describe('desktop first launch bootstrap', () => {
     })
 
     ;(window as typeof window & {
-      __TAURI__?: { core?: { invoke?: TestTauriInvoke } }
-    }).__TAURI__ = { core: { invoke: invoke as unknown as TestTauriInvoke } }
+      __TAURI_INTERNALS__?: { invoke?: TestTauriInvoke }
+    }).__TAURI_INTERNALS__ = { invoke: invoke as unknown as TestTauriInvoke }
 
     const user = await getCurrentUserFn()
 
@@ -112,8 +128,8 @@ describe('desktop first launch bootstrap', () => {
   it('resets the Tauri database file without clearing unrelated local preferences', async () => {
     const invoke = vi.fn(async () => null)
     ;(window as typeof window & {
-      __TAURI__?: { core?: { invoke?: TestTauriInvoke } }
-    }).__TAURI__ = { core: { invoke: invoke as unknown as TestTauriInvoke } }
+      __TAURI_INTERNALS__?: { invoke?: TestTauriInvoke }
+    }).__TAURI_INTERNALS__ = { invoke: invoke as unknown as TestTauriInvoke }
 
     localStorage.setItem(DB_KEY, '{"version":1}')
     localStorage.setItem('theme', 'dark')
@@ -129,7 +145,7 @@ describe('desktop first launch bootstrap', () => {
 describe('desktop backup and restore security and QA', () => {
   beforeEach(async () => {
     localStorage.clear()
-    delete (window as any).__TAURI__
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
     // Setup initial DB and admin
     await getCurrentUserFn()
     await setupValidator({
