@@ -7,6 +7,24 @@ e questo progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/)
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-06-26
+
+### Aggiornato
+- **React** aggiornato da 19.2.6 a 19.2.7 (patch di manutenzione).
+- **React DOM** aggiornato da 19.2.6 a 19.2.7 (patch di manutenzione).
+- **@types/react** aggiornato da 19.2.15 a 19.2.17 (definizioni TypeScript allineate a React 19.2.7).
+- **Vite** aggiornato da 8.0.16 a 8.1.0 (tool di build/dev server).
+- **jsdom** aggiornato da 28.1.0 a 29.1.1 (ambiente di test, dipendenza di sviluppo).
+- **GitHub Actions — configure-pages** aggiornato da 5 a 6.
+- **GitHub Actions — upload-pages-artifact** aggiornato da 3 a 5.
+- **GitHub Actions — deploy-pages** aggiornato da 4 a 5.
+
+### Fix
+- **CI: `cargo audit` eseguito dalla directory `src-tauri`**: il controllo di sicurezza delle dipendenze Rust veniva lanciato con `--manifest-path`, che in alcuni casi non risolveva correttamente il workspace. Ora viene eseguito direttamente dalla directory `src-tauri`, senza `--manifest-path`, per un rilevamento affidabile delle vulnerabilità.
+
+### Note
+- Release di manutenzione: nessuna modifica funzionale al comportamento dell'app. Tutte le modifiche sono aggiornamenti di dipendenze (patch/minor) e una correzione del workflow CI. Verificato con typecheck, suite di test (12/12 superati) e build di produzione.
+
 ## [1.1.1] - 2026-06-25
 
 ### Sicurezza
@@ -79,7 +97,8 @@ Prima release pubblica.
 - TypeScript strict mode
 - Tailwind CSS
 
-[Unreleased]: https://github.com/Francy2009/The-Club/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/Francy2009/The-Club/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/Francy2009/The-Club/releases/tag/v1.1.2
 [1.1.1]: https://github.com/Francy2009/The-Club/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Francy2009/The-Club/releases/tag/v1.1.0
 [1.0.4]: https://github.com/Francy2009/The-Club/releases/tag/v1.0.4
